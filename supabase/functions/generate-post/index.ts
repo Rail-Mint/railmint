@@ -54,16 +54,19 @@ serve(async (req) => {
 
     let contentText: string;
     let isFallback = false;
-    const modelVersion = "google/gemini-3-flash-preview";
+    const modelVersion = "google/gemini-2.5-flash";
 
-    // Try AI generation
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    // Try AI generation via OpenRouter
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
     try {
-      const aiRes = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
+          "HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+          "X-Title": "CreatorRail AI",
         },
         body: JSON.stringify({
           model: modelVersion,
