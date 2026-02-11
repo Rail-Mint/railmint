@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { computePromptHash, computeContentHash, computeMetaHash, getExplorerUrl } from '@/lib/mock-contract';
+import { PageLoader } from '@/components/ui/page-loader';
 
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -82,7 +83,7 @@ export default function PostDetail() {
     window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, '_blank');
   }
 
-  if (loading) return <div className="container py-12 text-center text-muted-foreground">Loading…</div>;
+  if (loading) return <PageLoader message="Verifying post proofs and metadata..." className="py-12" />;
   if (!post) return <div className="container py-12 text-center text-muted-foreground">Post not found.</div>;
 
   const HashRow = ({ label, hash, match }: { label: string; hash: string; match: boolean | null }) => (

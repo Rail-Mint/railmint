@@ -23,8 +23,17 @@ const queryClient = new QueryClient();
 
 function RainbowKitWrapper({ children }: { children: React.ReactNode }) {
   const { resolvedTheme } = useTheme();
+
+  const sharedTheme = {
+    accentColor: 'hsl(45, 93%, 47%)',
+    accentColorForeground: '#0f172a',
+    borderRadius: 'large' as const,
+    fontStack: 'rounded' as const,
+    overlayBlur: 'small' as const,
+  };
+
   return (
-    <RainbowKitProvider theme={resolvedTheme === "dark" ? darkTheme({ accentColor: "hsl(45, 93%, 47%)" }) : lightTheme({ accentColor: "hsl(45, 93%, 47%)" })}>
+    <RainbowKitProvider theme={resolvedTheme === 'dark' ? darkTheme(sharedTheme) : lightTheme(sharedTheme)}>
       {children}
     </RainbowKitProvider>
   );

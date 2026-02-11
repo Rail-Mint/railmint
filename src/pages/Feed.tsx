@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAccount } from 'wagmi';
-import { Heart, Shield, Clock, ArrowUpDown } from 'lucide-react';
+import { motion } from 'framer-motion';
+import { ArrowUpDown, Clock3, Flame, Heart, Shield, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageLoader } from '@/components/ui/page-loader';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { formatDistanceToNow } from 'date-fns';
@@ -23,6 +25,19 @@ interface Post {
   like_count: number;
   liked_by_me: boolean;
 }
+
+const cardReveal = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: i * 0.05,
+      duration: 0.45,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  }),
+};
 
 export default function Feed() {
   const { address } = useAccount();
@@ -96,80 +111,119 @@ export default function Feed() {
     .sort((a, b) => sort === 'popular' ? b.like_count - a.like_count : new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   if (loading) {
-    return <div className="container py-12 text-center text-muted-foreground">Loading feed…</div>;
+    return <PageLoader message="Curating the latest creator feed..." />;
   }
 
   return (
-    <div className="container py-8">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-        <h1 className="text-2xl font-bold">Content Feed</h1>
-        <div className="flex gap-2">
-          <Select value={epochFilter} onValueChange={setEpochFilter}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Epoch" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Epochs</SelectItem>
-              {epochs.map(e => (
-                <SelectItem key={e.id} value={String(e.id)}>Epoch {e.id}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" onClick={() => setSort(s => s === 'latest' ? 'popular' : 'latest')}>
-            <ArrowUpDown className="h-4 w-4 mr-1" />
-            {sort === 'latest' ? 'Latest' : 'Popular'}
-          </Button>
+    <div className="container py-8 md:py-10">
+      <section className="relative mb-8 overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-background/95 via-background/90 to-amber-50/40 p-5 shadow-[0_18px_70px_-34px_rgba(245,158,11,0.55)] md:p-7">
+        <div className="pointer-events-none absolute -top-20 right-[-4.5rem] h-52 w-52 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.22),_transparent_70%)] blur-2xl" />
+        <div className="pointer-events-none absolute -left-14 top-14 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_72%)] blur-xl" />
+
+        <div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" />
+              Creator Pulse
+            </p>
+            <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">Content Feed</h1>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground md:text-base">
+              Discover AI-generated BNB ecosystem posts, sort by momentum, and reward the clones producing standout content.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Select value={epochFilter} onValueChange={setEpochFilter}>
+              <SelectTrigger className="h-10 w-[150px] border-primary/25 bg-background/80">
+                <SelectValue placeholder="Epoch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Epochs</SelectItem>
+                {epochs.map(e => (
+                  <SelectItem key={e.id} value={String(e.id)}>Epoch {e.id}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 border-primary/30 bg-background/80"
+              onClick={() => setSort(s => s === 'latest' ? 'popular' : 'latest')}
+            >
+              <ArrowUpDown className="mr-1.5 h-4 w-4" />
+              {sort === 'latest' ? 'Latest' : 'Popular'}
+            </Button>
+          </div>
         </div>
-      </div>
+      </section>
 
       {filtered.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-border/70 bg-background/60 py-20 text-center text-muted-foreground">
           <p>No posts yet. Create a clone and generate content!</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filtered.map(post => (
-            <Card key={post.id} className="flex flex-col">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-sm">{post.creator?.clone_name || 'Unknown'}</p>
-                    <p className="text-xs text-muted-foreground">{post.creator?.x_handle}</p>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {filtered.map((post, idx) => (
+            <motion.div key={post.id} custom={idx} initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.2 }} variants={cardReveal}>
+              <Card className="group flex h-full flex-col overflow-hidden border-border/70 bg-background/75 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_18px_42px_-22px_rgba(245,158,11,0.6)]">
+                <CardHeader className="relative border-b border-border/60 pb-3">
+                  <div className="pointer-events-none absolute right-[-2.5rem] top-[-2.5rem] h-20 w-20 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.14),_transparent_70%)]" />
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold tracking-tight">{post.creator?.clone_name || 'Unknown'}</p>
+                      <p className="text-xs text-muted-foreground">{post.creator?.x_handle || 'anon creator'}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5">
+                      {post.commit_tx_hash && (
+                        <Badge variant="outline" className="gap-1 border-primary/35 bg-primary/10 text-[11px]">
+                          <Shield className="h-3 w-3" /> Verified
+                        </Badge>
+                      )}
+                      {post.is_fallback && (
+                        <Badge variant="secondary" className="text-[11px]">Fallback</Badge>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {post.commit_tx_hash && (
-                      <Badge variant="outline" className="text-xs gap-1">
-                        <Shield className="h-3 w-3" /> Verified
+                </CardHeader>
+
+                <CardContent className="flex-1 pt-4">
+                  <p className="line-clamp-5 text-sm leading-relaxed text-foreground/90">{post.content_text}</p>
+                </CardContent>
+
+                <CardFooter className="flex items-center justify-between border-t border-border/60 pt-3">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={post.liked_by_me ? 'text-destructive' : 'text-muted-foreground'}
+                      onClick={() => toggleLike(post.id, post.liked_by_me)}
+                    >
+                      <Heart className={`mr-1 h-4 w-4 ${post.liked_by_me ? 'fill-current' : ''}`} />
+                      {post.like_count}
+                    </Button>
+                    {post.like_count >= 10 && (
+                      <Badge variant="outline" className="gap-1 border-primary/35 bg-primary/10 text-[11px] text-primary">
+                        <Flame className="h-3 w-3" /> Trending
                       </Badge>
                     )}
-                    {post.is_fallback && (
-                      <Badge variant="secondary" className="text-xs">Fallback</Badge>
-                    )}
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent className="flex-1">
-                <p className="text-sm line-clamp-4">{post.content_text}</p>
-              </CardContent>
-              <CardFooter className="flex items-center justify-between pt-2">
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={post.liked_by_me ? 'text-destructive' : 'text-muted-foreground'}
-                    onClick={() => toggleLike(post.id, post.liked_by_me)}
-                  >
-                    <Heart className={`h-4 w-4 mr-1 ${post.liked_by_me ? 'fill-current' : ''}`} />
-                    {post.like_count}
-                  </Button>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
-                  </span>
-                </div>
-                <Button variant="ghost" size="sm" asChild>
-                  <Link to={`/post/${post.id}`}>View</Link>
-                </Button>
-              </CardFooter>
-            </Card>
+
+                  <div className="flex items-center gap-3">
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <Clock3 className="h-3 w-3" />
+                      {formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}
+                    </span>
+                    <Button variant="ghost" size="sm" asChild className="group text-primary hover:text-primary">
+                      <Link to={`/post/${post.id}`}>
+                        View
+                        <span className="ml-1 transition-transform duration-200 group-hover:translate-x-0.5">&rarr;</span>
+                      </Link>
+                    </Button>
+                  </div>
+                </CardFooter>
+              </Card>
+            </motion.div>
           ))}
         </div>
       )}

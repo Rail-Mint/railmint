@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { ShieldAlert, Play, DollarSign, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
+import { InlineLoader } from '@/components/ui/page-loader';
+import { formatFixed } from '@/lib/format-number';
 
 export default function Admin() {
   const { address, isConnected } = useAccount();
@@ -79,7 +81,7 @@ export default function Admin() {
         <ShieldAlert className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
         <h1 className="text-3xl font-bold mb-4">Admin Panel</h1>
         <p className="text-muted-foreground mb-8">Connect your wallet to access admin functions.</p>
-        <ConnectButton />
+        <ConnectWalletButton />
       </div>
     );
   }
@@ -109,7 +111,7 @@ export default function Admin() {
       {/* Epochs */}
       <h2 className="font-semibold mb-4">Epochs</h2>
       {loading ? (
-        <p className="text-muted-foreground">Loading…</p>
+        <InlineLoader label="Loading epochs..." />
       ) : epochs.length === 0 ? (
         <Card><CardContent className="py-8 text-center text-muted-foreground">No epochs found.</CardContent></Card>
       ) : (
@@ -124,7 +126,7 @@ export default function Admin() {
                       {epoch.status}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground">Pool: {Number(epoch.reward_pool).toFixed(2)} BNB</p>
+                  <p className="text-xs text-muted-foreground">Pool: {formatFixed(epoch.reward_pool, 2)} tBNB</p>
                 </div>
                 <div className="flex gap-2">
                   {epoch.status === 'open' && (

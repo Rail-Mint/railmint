@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -95,11 +97,62 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-image:
+      radial-gradient(circle at 8% 4%, hsl(45 94% 56% / 0.14), transparent 40%),
+      radial-gradient(circle at 90% 8%, hsl(36 97% 54% / 0.1), transparent 42%),
+      linear-gradient(180deg, hsl(var(--background)), hsl(220 40% 98%));
+    background-attachment: fixed;
+    font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+    text-rendering: optimizeLegibility;
+    transition: background-color 280ms ease, color 220ms ease;
   }
+
+  .dark body {
+    background-image:
+      radial-gradient(circle at 10% 7%, hsl(45 94% 56% / 0.18), transparent 36%),
+      radial-gradient(circle at 90% 5%, hsl(38 92% 50% / 0.14), transparent 40%),
+      linear-gradient(180deg, hsl(222 22% 8%), hsl(223 18% 9%));
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
+}
+
+@layer utilities {
+  .hero-noise {
+    background-image:
+      radial-gradient(hsl(220 15% 25% / 0.05) 0.8px, transparent 0.8px),
+      linear-gradient(130deg, hsl(45 93% 47% / 0.02), transparent 65%);
+    background-size: 24px 24px, cover;
+  }
+
+  .dark .hero-noise {
+    background-image:
+      radial-gradient(hsl(210 18% 78% / 0.08) 0.7px, transparent 0.7px),
+      linear-gradient(130deg, hsl(45 93% 47% / 0.04), transparent 68%);
+    background-size: 24px 24px, cover;
+  }
+}
+
+[data-rk] {
+  --rk-fonts-body: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+  --rk-colors-accentColor: hsl(45 93% 47%);
+  --rk-colors-accentColorForeground: #111827;
+  --rk-radii-connectButton: 0.8rem;
+  --rk-radii-menuButton: 0.8rem;
+  --rk-radii-modal: 1rem;
+  --rk-shadows-connectButton: 0 14px 35px -20px rgba(245, 158, 11, 0.75);
 }

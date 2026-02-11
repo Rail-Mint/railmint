@@ -1,9 +1,13 @@
 import { Link, useLocation } from 'react-router-dom';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-import { Moon, Sun, Menu, X } from 'lucide-react';
+import { Check, Menu, Moon, Palette, Sun, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
+import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
+import { BrandMark } from '@/components/branding/BrandMark';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { useBrandStyle } from '@/hooks/use-brand-style';
+import { BRAND_STYLE_OPTIONS } from '@/lib/brand-style';
 
 const navLinks = [
   { to: '/feed', label: 'Feed' },
@@ -16,14 +20,13 @@ export function Navbar() {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [brandStyle, setBrandStyle] = useBrandStyle();
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/80 backdrop-blur-sm">
+    <header className="sticky top-0 z-50 border-b border-border/70 bg-background/72 backdrop-blur-md">
       <div className="container flex h-16 items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 font-bold text-xl">
-          <span className="text-primary">Creator</span>
-          <span>Rail</span>
-          <span className="text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded font-medium">AI</span>
+        <Link to="/" className="transition-transform duration-200 hover:scale-[1.01]">
+          <BrandMark compact />
         </Link>
 
         {/* Desktop nav */}
@@ -32,8 +35,10 @@ export function Navbar() {
             <Link
               key={link.to}
               to={link.to}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-secondary ${
-                location.pathname === link.to ? 'bg-secondary text-foreground' : 'text-muted-foreground'
+              className={`px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 hover:bg-amber-100/60 dark:hover:bg-amber-500/10 ${
+                location.pathname === link.to
+                  ? 'bg-gradient-to-r from-amber-100/70 to-amber-50/70 text-foreground dark:from-amber-500/20 dark:to-amber-400/10'
+                  : 'text-muted-foreground'
               }`}
             >
               {link.label}
@@ -42,6 +47,37 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Change brand style">
+                <Palette className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/70 bg-background/95 p-1.5 backdrop-blur-xl">
+              <DropdownMenuLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Brand style</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <div className="grid gap-1 p-1">
+                {BRAND_STYLE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => setBrandStyle(option.value)}
+                    className={`relative rounded-lg border px-2.5 py-2 text-left transition-colors ${
+                      brandStyle === option.value
+                        ? 'border-primary/35 bg-primary/10'
+                        : 'border-transparent hover:border-border/70 hover:bg-secondary/60'
+                    }`}
+                  >
+                    <span className="block text-sm font-medium text-foreground">{option.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{option.description}</span>
+                    {brandStyle === option.value ? <Check className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-primary" /> : null}
+                  </button>
+                ))}
+              </div>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             variant="ghost"
             size="icon"
@@ -51,7 +87,7 @@ export function Navbar() {
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           </Button>
           <div className="hidden md:block">
-            <ConnectButton showBalance={false} chainStatus="icon" accountStatus="avatar" />
+            <ConnectWalletButton compact />
           </div>
           <Button
             variant="ghost"
@@ -66,21 +102,23 @@ export function Navbar() {
 
       {/* Mobile nav */}
       {mobileOpen && (
-        <div className="md:hidden border-t bg-background p-4 space-y-2">
+        <div className="space-y-2 border-t border-border/70 bg-background/95 p-4 md:hidden">
           {navLinks.map((link) => (
             <Link
               key={link.to}
               to={link.to}
               onClick={() => setMobileOpen(false)}
-              className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                location.pathname === link.to ? 'bg-secondary text-foreground' : 'text-muted-foreground'
+              className={`block rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                location.pathname === link.to
+                  ? 'bg-gradient-to-r from-amber-100/70 to-amber-50/70 text-foreground dark:from-amber-500/20 dark:to-amber-400/10'
+                  : 'text-muted-foreground'
               }`}
             >
               {link.label}
             </Link>
           ))}
           <div className="pt-2">
-            <ConnectButton showBalance={false} chainStatus="icon" />
+            <ConnectWalletButton compact className="w-full justify-center" />
           </div>
         </div>
       )}

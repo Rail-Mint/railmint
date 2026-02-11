@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
-import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -12,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
 
 const schema = z.object({
   x_handle: z.string().min(1, 'X handle is required').regex(/^@?[\w]+$/, 'Invalid handle'),
@@ -45,7 +45,7 @@ export default function Onboarding() {
         <Bot className="h-16 w-16 mx-auto mb-6 text-primary" />
         <h1 className="text-3xl font-bold mb-4">Create Your AI Clone</h1>
         <p className="text-muted-foreground mb-8">Connect your wallet to get started.</p>
-        <ConnectButton />
+        <ConnectWalletButton />
       </div>
     );
   }
