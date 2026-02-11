@@ -1,0 +1,10 @@
+project_id = "adwgzibjizhwqpbjpgyc"
+
+[functions.generate-post]
+verify_jwt = false
+
+[functions.close-epoch]
+verify_jwt = false
+
+[functions.trigger-payout]
+verify_jwt = false
