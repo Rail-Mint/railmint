@@ -66,7 +66,7 @@ serve(async (req) => {
           Authorization: `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
           "HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
-          "X-Title": "CreatorRail AI",
+          "X-Title": "RailMindAI",
         },
         body: JSON.stringify({
           model: modelVersion,

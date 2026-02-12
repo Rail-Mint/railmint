@@ -11,7 +11,7 @@ export function Footer() {
           <Link to="/leaderboard" className="hover:text-foreground transition-colors">Leaderboard</Link>
           <Link to="/rewards" className="hover:text-foreground transition-colors">Rewards</Link>
         </nav>
-        <p>Built on BNB Chain</p>
+        <p>RailMindAI · Built on BNB Chain</p>
       </div>
     </footer>
   );

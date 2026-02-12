@@ -1,0 +1,26 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M20 122H112C126 122 138 110 138 96C138 82 126 70 112 70H84" stroke="url(#goldA)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M103 122L148 168" stroke="url(#goldB)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M129 152L173 108" stroke="url(#goldC)" stroke-width="16" stroke-linecap="round"/>
+  <path d="M156 140L184 112" stroke="url(#goldD)" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="190" cy="108" r="9" fill="#F9E7AE"/>
+  <circle cx="155" cy="142" r="9" fill="#E4BE68"/>
+  <defs>
+    <linearGradient id="goldA" x1="20" y1="96" x2="138" y2="96" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B27A27"/>
+      <stop offset="1" stop-color="#F8E39F"/>
+    </linearGradient>
+    <linearGradient id="goldB" x1="103" y1="122" x2="148" y2="168" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E4BA62"/>
+      <stop offset="1" stop-color="#9E6C21"/>
+    </linearGradient>
+    <linearGradient id="goldC" x1="129" y1="152" x2="173" y2="108" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#AC7523"/>
+      <stop offset="1" stop-color="#F8E5AC"/>
+    </linearGradient>
+    <linearGradient id="goldD" x1="156" y1="140" x2="184" y2="112" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4D785"/>
+      <stop offset="1" stop-color="#A06E22"/>
+    </linearGradient>
+  </defs>
+</svg>

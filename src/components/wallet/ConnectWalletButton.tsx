@@ -65,7 +65,7 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
           );
         }
 
-        const nativeSymbol = normalizeTokenUnit((chain as any).nativeCurrency?.symbol ?? 'tBNB');
+        const nativeSymbol = normalizeTokenUnit(chain.nativeCurrency?.symbol ?? 'tBNB');
         const displayAddress = account.address ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}` : account.displayName;
         const displayBalance = formatTokenBalance(account.displayBalance, nativeSymbol, 4);
         const walletIdentity = account.address ? account.address.slice(-4).toUpperCase() : 'CR';
@@ -77,11 +77,11 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
                 type="button"
                 className={cn(
                   buttonVariants({ variant: 'outline', size: compact ? 'sm' : 'default' }),
-                  'group rounded-xl border-primary/35 bg-background/80 text-foreground shadow-[0_10px_24px_-18px_rgba(245,158,11,0.8)] hover:border-primary/50 hover:bg-amber-50/60 dark:hover:bg-amber-500/10',
+                  'group rounded-xl border-primary/35 bg-background/80 text-foreground shadow-[0_10px_24px_-18px_rgba(245,158,11,0.8)] transition-all duration-250 data-[state=open]:border-primary/60 data-[state=open]:bg-amber-50/70 hover:border-primary/50 hover:bg-amber-50/60 dark:data-[state=open]:bg-amber-500/10 dark:hover:bg-amber-500/10',
                   className,
                 )}
               >
-                <span className="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-full border border-primary/30 bg-primary/10 text-[10px] font-semibold text-primary">
+                <span className="inline-flex h-5 w-5 items-center justify-center overflow-hidden rounded-full border border-primary/30 bg-primary/10 text-[10px] font-semibold text-primary shadow-[0_8px_18px_-12px_rgba(245,158,11,0.95)]">
                   {chain.hasIcon && chain.iconUrl ? (
                     <img alt={chain.name ?? 'Chain icon'} src={chain.iconUrl} className="h-full w-full" />
                   ) : (
@@ -105,11 +105,12 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
             <DropdownMenuContent
               align="end"
               sideOffset={10}
-              className="w-[330px] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-0 shadow-[0_22px_55px_-30px_rgba(15,23,42,0.75)] backdrop-blur-xl"
+              className="w-[min(92vw,330px)] overflow-hidden rounded-2xl border border-border/70 bg-background/95 p-0 shadow-[0_22px_55px_-30px_rgba(15,23,42,0.75)] backdrop-blur-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2"
             >
-              <div className="relative p-4">
+              <div className="relative p-3 sm:p-4">
                 <div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.3),_transparent_70%)]" />
                 <div className="pointer-events-none absolute -left-8 bottom-4 h-24 w-24 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_70%)]" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/45 to-transparent" />
 
                 <div className="mb-3 rounded-xl border border-primary/30 bg-gradient-to-br from-amber-50/70 via-background to-background p-3 dark:from-amber-500/10">
                   <div className="mb-2 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
@@ -142,11 +143,11 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button
                     type="button"
                     onClick={() => copyAddress(account.address)}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-secondary/50 px-3 py-2.5 text-sm font-medium transition-colors hover:bg-secondary"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-border/70 bg-secondary/50 px-3 py-2.5 text-sm font-medium transition-all duration-200 hover:-translate-y-0.5 hover:bg-secondary"
                   >
                     <Copy className="h-4 w-4" />
                     Copy
@@ -155,12 +156,14 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
                   <button
                     type="button"
                     onClick={() => disconnect()}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/15"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive transition-all duration-200 hover:-translate-y-0.5 hover:border-destructive/65 hover:bg-destructive/30 hover:text-destructive"
                   >
                     <LogOut className="h-4 w-4" />
                     Disconnect
                   </button>
                 </div>
+
+                <p className="pt-2 text-center text-[11px] text-muted-foreground">Wallet actions are local to this browser session.</p>
               </div>
             </DropdownMenuContent>
           </DropdownMenu>

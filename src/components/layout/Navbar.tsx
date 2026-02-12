@@ -1,13 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Check, Menu, Moon, Palette, Sun, X } from 'lucide-react';
+import { Menu, Moon, Sun, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 import { ConnectWalletButton } from '@/components/wallet/ConnectWalletButton';
 import { BrandMark } from '@/components/branding/BrandMark';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useBrandStyle } from '@/hooks/use-brand-style';
-import { BRAND_STYLE_OPTIONS } from '@/lib/brand-style';
 
 const navLinks = [
   { to: '/feed', label: 'Feed' },
@@ -20,7 +17,6 @@ export function Navbar() {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [brandStyle, setBrandStyle] = useBrandStyle();
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/72 backdrop-blur-md">
@@ -47,37 +43,6 @@ export function Navbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Change brand style">
-                <Palette className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-
-            <DropdownMenuContent align="end" className="w-56 rounded-xl border-border/70 bg-background/95 p-1.5 backdrop-blur-xl">
-              <DropdownMenuLabel className="text-xs uppercase tracking-[0.12em] text-muted-foreground">Brand style</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <div className="grid gap-1 p-1">
-                {BRAND_STYLE_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setBrandStyle(option.value)}
-                    className={`relative rounded-lg border px-2.5 py-2 text-left transition-colors ${
-                      brandStyle === option.value
-                        ? 'border-primary/35 bg-primary/10'
-                        : 'border-transparent hover:border-border/70 hover:bg-secondary/60'
-                    }`}
-                  >
-                    <span className="block text-sm font-medium text-foreground">{option.label}</span>
-                    <span className="block text-[11px] text-muted-foreground">{option.description}</span>
-                    {brandStyle === option.value ? <Check className="absolute right-2.5 top-2.5 h-3.5 w-3.5 text-primary" /> : null}
-                  </button>
-                ))}
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
           <Button
             variant="ghost"
             size="icon"

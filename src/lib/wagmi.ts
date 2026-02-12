@@ -17,8 +17,8 @@ export const opBNBTestnet = defineChain({
 });
 
 export const config = getDefaultConfig({
-  appName: 'CreatorRail AI',
-  projectId: 'creatorrail-demo', // WalletConnect project ID placeholder
+  appName: 'RailMindAI',
+  projectId: 'railmindai-demo', // WalletConnect project ID placeholder
   chains: [opBNBTestnet, bscTestnet],
   transports: {
     [opBNBTestnet.id]: http(),
