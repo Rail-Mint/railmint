@@ -48,13 +48,13 @@ export function BrandMark({ compact = false, className, showTagline = false, var
         )}
       >
         <span className={cn('pointer-events-none absolute inset-[2px] rounded-[11px] border', styles.ring)} />
-        <span className="relative z-10">CR</span>
+        <span className="relative z-10">RM</span>
         <span className={cn('pointer-events-none absolute inset-0', styles.glow)} />
       </div>
 
       <div className="leading-none">
         <div className="flex items-center gap-2">
-          <span className={cn('font-semibold tracking-tight', compact ? 'text-[15px]' : 'text-base', styles.title)}>Creator Rail</span>
+          <span className={cn('font-semibold tracking-tight', compact ? 'text-[15px]' : 'text-base', styles.title)}>Rail Mind</span>
           <span className={cn('rounded-full border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em]', styles.tag)}>
             AI
           </span>

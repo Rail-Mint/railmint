@@ -65,7 +65,7 @@ export function ConnectWalletButton({ className, label = 'Connect Wallet', compa
           );
         }
 
-        const nativeSymbol = normalizeTokenUnit(chain.nativeCurrency?.symbol ?? 'tBNB');
+        const nativeSymbol = normalizeTokenUnit((chain as any).nativeCurrency?.symbol ?? 'tBNB');
         const displayAddress = account.address ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}` : account.displayName;
         const displayBalance = formatTokenBalance(account.displayBalance, nativeSymbol, 4);
         const walletIdentity = account.address ? account.address.slice(-4).toUpperCase() : 'CR';
