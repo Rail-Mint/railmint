@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Clock3, Medal, Sparkles, Trophy } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -431,6 +432,8 @@ export default function Leaderboard() {
 					) : null}
 				</div>
 			)}
+
+			<PublicJourneyStrip currentPage="leaderboard" className="mt-6 sm:mt-8" />
 		</div>
 	);
 }

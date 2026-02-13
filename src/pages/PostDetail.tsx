@@ -20,8 +20,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageLoader } from "@/components/ui/page-loader";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Switch } from "@/components/ui/switch";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -117,7 +120,6 @@ function HashRow({
 export default function PostDetail() {
 	const PROOF_BEHAVIOR_KEY = "railmindai.proof-behavior-count";
 	const ONBOARDING_TIP_KEY = "railmindai.post-onboarding-dismissed";
-	const READER_MODE_DEFAULT_KEY = "railmindai.reader-mode-default";
 
 	const { id } = useParams<{ id: string }>();
 	const { address } = useAccount();
@@ -138,20 +140,12 @@ export default function PostDetail() {
 		"overview",
 	);
 	const [readerMode, setReaderMode] = useState(true);
-	const [readerModeDefault, setReaderModeDefault] = useState(true);
 	const [proofBehaviorCount, setProofBehaviorCount] = useState(0);
 	const [showOnboardingTip, setShowOnboardingTip] = useState(false);
 
 	const tabSessionKey = id ? `railmindai.post-tab.${id}` : null;
 
 	useEffect(() => {
-		const storedReaderDefault = window.localStorage.getItem(
-			READER_MODE_DEFAULT_KEY,
-		);
-		const defaultReaderMode = storedReaderDefault !== "0";
-		setReaderModeDefault(defaultReaderMode);
-		setReaderMode(defaultReaderMode);
-
 		const stored = Number(window.localStorage.getItem(PROOF_BEHAVIOR_KEY));
 		if (Number.isFinite(stored) && stored > 0) {
 			setProofBehaviorCount(stored);
@@ -161,13 +155,17 @@ export default function PostDetail() {
 		if (!dismissedTip) {
 			setShowOnboardingTip(true);
 		}
-	}, [READER_MODE_DEFAULT_KEY]);
+	}, []);
 
 	useEffect(() => {
 		if (!tabSessionKey) return;
 
 		const storedTab = window.sessionStorage.getItem(tabSessionKey);
-		if (storedTab === "overview" || storedTab === "proof" || storedTab === "replay") {
+		if (
+			storedTab === "overview" ||
+			storedTab === "proof" ||
+			storedTab === "replay"
+		) {
 			setActiveTab(storedTab);
 		}
 	}, [tabSessionKey]);
@@ -269,7 +267,7 @@ export default function PostDetail() {
 	}
 
 	function shareToX() {
-		const text = `Check out this AI-generated BNB content on RailMindAI! 🚀`;
+		const text = `Check out this AI-generated BNB content on RailMintAI! 🚀`;
 		const url = window.location.href;
 		window.open(
 			`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
@@ -379,7 +377,10 @@ export default function PostDetail() {
 		window.sessionStorage.setItem(tabSessionKey, tab);
 	}
 
-	function setTab(tab: "overview" | "proof" | "replay", options?: { bump?: boolean }) {
+	function setTab(
+		tab: "overview" | "proof" | "replay",
+		options?: { bump?: boolean },
+	) {
 		setActiveTab(tab);
 		persistTab(tab);
 		if (options?.bump) {
@@ -406,11 +407,6 @@ export default function PostDetail() {
 	function dismissOnboardingTip() {
 		window.localStorage.setItem(ONBOARDING_TIP_KEY, "1");
 		setShowOnboardingTip(false);
-	}
-
-	function toggleReaderDefault(enabled: boolean) {
-		setReaderModeDefault(enabled);
-		window.localStorage.setItem(READER_MODE_DEFAULT_KEY, enabled ? "1" : "0");
 	}
 
 	const hasMismatch = [
@@ -559,32 +555,32 @@ export default function PostDetail() {
 									{readerMode ? "Reader Mode On" : "Reader Mode Off"}
 								</Button>
 							</PopoverTrigger>
-							<PopoverContent align="end" className="w-[300px] rounded-xl border-primary/25 bg-background/95 p-3">
+							<PopoverContent
+								align="end"
+								className="w-[min(92vw,300px)] rounded-xl border-primary/25 bg-background/95 p-3"
+							>
 								<p className="text-xs font-semibold uppercase tracking-[0.12em] text-primary">
 									Quick Start
 								</p>
-								<p className="mt-1 text-sm font-medium text-foreground">Read → Engage → Verify</p>
+								<p className="mt-1 text-sm font-medium text-foreground">
+									Read → Engage → Verify
+								</p>
 								<p className="mt-1 text-xs text-muted-foreground">
-									Reader Mode keeps focus on content first. Turn it off when you want proof tabs and replay tools.
+									Reader Mode keeps focus on content first. Turn it off when you
+									want proof tabs and replay tools.
 								</p>
 								<div className="mt-3 flex justify-end">
-									<Button size="sm" variant="outline" className="h-7" onClick={dismissOnboardingTip}>
+									<Button
+										size="sm"
+										variant="outline"
+										className="h-7"
+										onClick={dismissOnboardingTip}
+									>
 										Got it
 									</Button>
 								</div>
 							</PopoverContent>
 						</Popover>
-
-						<div className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-2.5 py-1">
-							<span className="text-[11px] font-medium text-muted-foreground">
-								Default Reader
-							</span>
-							<Switch
-								checked={readerModeDefault}
-								onCheckedChange={toggleReaderDefault}
-								aria-label="Set Reader Mode as default for posts"
-							/>
-						</div>
 
 						<Badge
 							variant="outline"
@@ -655,7 +651,9 @@ export default function PostDetail() {
 														Why mismatch?
 													</p>
 													<ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-														{mismatchHints[check.label as "Prompt" | "Content" | "Meta"].map((hint) => (
+														{mismatchHints[
+															check.label as "Prompt" | "Content" | "Meta"
+														].map((hint) => (
 															<li key={`${check.label}-${hint}`}>{hint}</li>
 														))}
 													</ul>
@@ -667,7 +665,8 @@ export default function PostDetail() {
 												variant="outline"
 												className={inlineChipClass(check.value)}
 											>
-												{check.label}: {check.value === true ? "Pass" : "Pending"}
+												{check.label}:{" "}
+												{check.value === true ? "Pass" : "Pending"}
 											</Badge>
 										),
 									)}
@@ -712,70 +711,81 @@ export default function PostDetail() {
 					>
 						<Card className={`flex h-full flex-col ${snapshotFrameClass}`}>
 							<CardHeader>
-							<CardTitle
-								className={`flex items-center gap-2 text-lg ${snapshotTitleClass}`}
-							>
-								<Shield className={`h-5 w-5 ${snapshotTitleClass}`} /> Quick Trust
-								Snapshot
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="flex flex-1 flex-col space-y-4">
-							<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-								<div className="mb-2 flex items-center justify-between text-xs">
-									<span className="font-medium text-muted-foreground">Confidence meter</span>
-									<span className="font-semibold text-foreground">{confidencePercent}%</span>
+								<CardTitle
+									className={`flex items-center gap-2 text-lg ${snapshotTitleClass}`}
+								>
+									<Shield className={`h-5 w-5 ${snapshotTitleClass}`} /> Quick
+									Trust Snapshot
+								</CardTitle>
+							</CardHeader>
+							<CardContent className="flex flex-1 flex-col space-y-4">
+								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
+									<div className="mb-2 flex items-center justify-between text-xs">
+										<span className="font-medium text-muted-foreground">
+											Confidence meter
+										</span>
+										<span className="font-semibold text-foreground">
+											{confidencePercent}%
+										</span>
+									</div>
+									<div className="h-2 overflow-hidden rounded-full bg-secondary/70">
+										<div
+											className={`h-full rounded-full transition-all duration-300 ${
+												hasMismatch
+													? "bg-destructive"
+													: verificationScore === 3
+														? "bg-primary"
+														: "bg-amber-500"
+											}`}
+											style={{ width: `${confidencePercent}%` }}
+										/>
+									</div>
+									<div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+										<span className="inline-flex items-center gap-1">
+											<span className="h-2 w-2 rounded-full bg-primary" /> Pass
+										</span>
+										<span className="inline-flex items-center gap-1">
+											<span className="h-2 w-2 rounded-full bg-amber-500" />{" "}
+											Pending
+										</span>
+										<span className="inline-flex items-center gap-1">
+											<span className="h-2 w-2 rounded-full bg-destructive" />{" "}
+											Mismatch
+										</span>
+									</div>
 								</div>
-								<div className="h-2 overflow-hidden rounded-full bg-secondary/70">
-									<div
-										className={`h-full rounded-full transition-all duration-300 ${
-											hasMismatch
-												? "bg-destructive"
-												: verificationScore === 3
-													? "bg-primary"
-													: "bg-amber-500"
-										}`}
-										style={{ width: `${confidencePercent}%` }}
-									/>
-								</div>
-								<div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-									<span className="inline-flex items-center gap-1">
-										<span className="h-2 w-2 rounded-full bg-primary" /> Pass
-									</span>
-									<span className="inline-flex items-center gap-1">
-										<span className="h-2 w-2 rounded-full bg-amber-500" /> Pending
-									</span>
-									<span className="inline-flex items-center gap-1">
-										<span className="h-2 w-2 rounded-full bg-destructive" /> Mismatch
-									</span>
-								</div>
-							</div>
 
-							<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-								<p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-									Proof timeline
-								</p>
-								<div className="flex items-center">
-									{proofTimelineSteps.map((step, index) => (
-										<div key={step.label} className="flex min-w-0 flex-1 items-center">
-											<div className="flex min-w-0 flex-col items-center">
-												<span
-													className={`h-2.5 w-2.5 rounded-full ${step.done ? "bg-primary" : "bg-secondary"}`}
-												/>
-												<span className="mt-1 text-[11px] text-muted-foreground">{step.label}</span>
+								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
+									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+										Proof timeline
+									</p>
+									<div className="flex items-center">
+										{proofTimelineSteps.map((step, index) => (
+											<div
+												key={step.label}
+												className="flex min-w-0 flex-1 items-center"
+											>
+												<div className="flex min-w-0 flex-col items-center">
+													<span
+														className={`h-2.5 w-2.5 rounded-full ${step.done ? "bg-primary" : "bg-secondary"}`}
+													/>
+													<span className="mt-1 text-[11px] text-muted-foreground">
+														{step.label}
+													</span>
+												</div>
+												{index < proofTimelineSteps.length - 1 ? (
+													<div
+														className={`mx-2 h-[2px] flex-1 rounded-full ${proofTimelineSteps[index + 1]?.done && step.done ? "bg-primary/60" : "bg-secondary"}`}
+													/>
+												) : null}
 											</div>
-											{index < proofTimelineSteps.length - 1 ? (
-												<div
-													className={`mx-2 h-[2px] flex-1 rounded-full ${proofTimelineSteps[index + 1]?.done && step.done ? "bg-primary/60" : "bg-secondary"}`}
-												/>
-											) : null}
-										</div>
-									))}
+										))}
+									</div>
 								</div>
-							</div>
 
-							<div className="grid grid-cols-3 gap-2">
-								{checks.map((check) => (
-									<div
+								<div className="grid grid-cols-3 gap-2">
+									{checks.map((check) => (
+										<div
 											key={check.label}
 											className="rounded-xl border border-border/70 bg-background/70 p-2 text-center"
 										>
@@ -787,28 +797,30 @@ export default function PostDetail() {
 									))}
 								</div>
 
-							<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-								<p className="text-sm text-muted-foreground">
-									{hasMismatch
+								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
+									<p className="text-sm text-muted-foreground">
+										{hasMismatch
 											? "Some checks are mismatched. Review technical proof details before trusting this artifact."
 											: verificationScore === 3
 												? "All proof checks are passing. This artifact is consistent with stored hashes."
 												: "Proof checks are still pending. You can inspect each hash below."}
 									</p>
-							</div>
+								</div>
 
-							<Button
-								variant="outline"
-								className={`mt-auto w-full ${ctaClass}`}
-								onClick={openProofDetails}
-							>
-								{primaryProofCtaLabel}
-							</Button>
+								<Button
+									variant="outline"
+									className={`mt-auto w-full ${ctaClass}`}
+									onClick={openProofDetails}
+								>
+									{primaryProofCtaLabel}
+								</Button>
 
-							<p className="text-xs text-muted-foreground">{primaryProofCtaHint}</p>
-						</CardContent>
-					</Card>
-				</motion.div>
+								<p className="text-xs text-muted-foreground">
+									{primaryProofCtaHint}
+								</p>
+							</CardContent>
+						</Card>
+					</motion.div>
 				) : null}
 			</div>
 
@@ -834,7 +846,7 @@ export default function PostDetail() {
 					onValueChange={handleTabChange}
 					className="mt-6"
 				>
-					<TabsList className="grid w-full max-w-[520px] grid-cols-3">
+					<TabsList className="grid w-full max-w-full grid-cols-3 sm:max-w-[520px]">
 						<TabsTrigger value="overview">Overview</TabsTrigger>
 						<TabsTrigger value="proof">Proof Details</TabsTrigger>
 						<TabsTrigger value="replay">Replay</TabsTrigger>

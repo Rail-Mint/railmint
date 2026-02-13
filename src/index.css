@@ -99,6 +99,13 @@
     scroll-behavior: smooth;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100%;
+  }
+
   * {
     @apply border-border;
   }
@@ -112,7 +119,15 @@
     background-attachment: fixed;
     font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
     text-rendering: optimizeLegibility;
+    overflow-x: hidden;
     transition: background-color 280ms ease, color 220ms ease;
+  }
+
+  img,
+  svg,
+  video,
+  canvas {
+    max-width: 100%;
   }
 
   .dark body {

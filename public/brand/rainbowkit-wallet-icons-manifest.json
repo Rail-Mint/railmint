@@ -1,0 +1,45 @@
+{
+  "source": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/registry.json",
+  "generatedAt": "2026-02-12T18:01:15.311Z",
+  "totalWallets": 500,
+  "selectedWallets": 5,
+  "downloaded": 5,
+  "failed": 0,
+  "items": [
+    {
+      "id": "163d2cf19babf05eb8962e9748f9ebe613ed52ebf9c8107c9a0f104bfcf161b3",
+      "name": "Brave Wallet",
+      "url": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/icons/163d2cf19babf05eb8962e9748f9ebe613ed52ebf9c8107c9a0f104bfcf161b3.png",
+      "file": "brave-wallet.png",
+      "status": "ok"
+    },
+    {
+      "id": "fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa",
+      "name": "Coinbase Wallet",
+      "url": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/icons/fd20dc426fb37566d803205b19bbc1d4096b248ac04548e3cfb6b3a38bd033aa.png",
+      "file": "coinbase-wallet.png",
+      "status": "ok"
+    },
+    {
+      "id": "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96",
+      "name": "MetaMask",
+      "url": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/icons/c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96.png",
+      "file": "metamask.png",
+      "status": "ok"
+    },
+    {
+      "id": "1ae92b26df02f0abca6304df07debccd18262fdf5fe82daa81593582dac9a369",
+      "name": "Rainbow",
+      "url": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/icons/1ae92b26df02f0abca6304df07debccd18262fdf5fe82daa81593582dac9a369.png",
+      "file": "rainbow.png",
+      "status": "ok"
+    },
+    {
+      "id": "4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0",
+      "name": "Trust Wallet",
+      "url": "https://raw.githubusercontent.com/rainbow-me/rainbowkit/main/packages/rainbowkit/assets/wallets/icons/4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0.png",
+      "file": "trust-wallet.png",
+      "status": "ok"
+    }
+  ]
+}
