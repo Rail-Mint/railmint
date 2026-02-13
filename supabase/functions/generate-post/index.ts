@@ -239,15 +239,6 @@ serve(async (req) => {
 			meta_hash: metaHash,
 			commit_tx_hash: commitTxHash,
 			is_fallback: isFallback,
-			quality_score: analysis.qualityScore,
-			moderation_score: analysis.moderationScore,
-			engagement_score: analysis.engagementScore,
-			composite_score: analysis.compositeScore,
-			quality_flags: analysis.qualityFlags,
-			content_tags: analysis.contentTags,
-			risk_level: analysis.riskLevel,
-			source_platform: "internal",
-			source_reference: null,
 			created_at: createdAt,
 		});
 

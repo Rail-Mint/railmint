@@ -8,6 +8,7 @@ import {
 	FileText,
 	Gift,
 	LayoutGrid,
+	Loader2,
 	Menu,
 	Settings,
 	Shield,
@@ -244,6 +245,7 @@ export default function Studio() {
 	const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(
 		null,
 	);
+	const [generatingPost, setGeneratingPost] = useState(false);
 	const [studioDensityCompact, setStudioDensityCompact] = useState(false);
 	const [autoCollapseSidebar, setAutoCollapseSidebar] = useState(false);
 	const [desktopSidebarHidden, setDesktopSidebarHidden] = useState(false);
@@ -725,6 +727,34 @@ export default function Studio() {
 		Boolean(profileForm.persona_text.trim()) &&
 		Boolean(profileForm.prompt_template.trim());
 
+	async function handleGeneratePost() {
+		if (!address) return;
+		setGeneratingPost(true);
+		try {
+			const { data, error } = await supabase.functions.invoke("generate-post", {
+				body: { wallet_address: address },
+			});
+			if (error) throw error;
+			if (data?.error) throw new Error(data.error);
+			// Reload posts
+			if (profile) {
+				const { data: posts } = await supabase
+					.from("posts")
+					.select("id, content_text, created_at, epoch_id, commit_tx_hash")
+					.eq("creator_id", profile.id)
+					.order("created_at", { ascending: false })
+					.limit(10);
+				if (posts) {
+					setRecentPosts(posts.map((p) => ({ ...p, like_count: 0 })));
+				}
+			}
+		} catch (err: any) {
+			console.error("Generate post error:", err);
+		} finally {
+			setGeneratingPost(false);
+		}
+	}
+
 	function renderSectionContent() {
 		if (loadingData) {
 			return (
@@ -936,13 +966,22 @@ export default function Studio() {
 			case "content":
 				return (
 					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
+						<CardHeader className="flex flex-row items-center justify-between">
 							<CardTitle>Recent Content</CardTitle>
+							<Button
+								onClick={handleGeneratePost}
+								disabled={generatingPost}
+								size="sm"
+								className="gap-2"
+							>
+								{generatingPost ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+								{generatingPost ? "Generating…" : "Generate Post"}
+							</Button>
 						</CardHeader>
 						<CardContent className="space-y-3">
 							{recentPosts.length === 0 ? (
 								<p className="text-sm text-muted-foreground">
-									No content yet. Open feed to publish your first post.
+									No content yet. Hit Generate Post above to create your first AI post.
 								</p>
 							) : (
 								recentPosts.slice(0, 8).map((post) => (
