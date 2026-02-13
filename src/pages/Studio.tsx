@@ -1292,22 +1292,24 @@ export default function Studio() {
 											) : null}
 										</Button>
 									))}
+
+									<Button
+										type="button"
+										variant="outline"
+										className="h-14 justify-start rounded-2xl border-border/70 bg-background/70 px-4 text-base transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-background"
+										disabled={status === "pending" || !openConnectModal}
+										onClick={() => openConnectModal?.()}
+									>
+										<span className="mr-3 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm">
+											<WalletCards className="h-5 w-5" />
+										</span>
+										<span className="truncate">More wallets</span>
+									</Button>
 								</div>
 
 								{connectError ? (
 									<p className="text-sm text-destructive">{connectError}</p>
 								) : null}
-
-								<Button
-									type="button"
-									variant="outline"
-									className="h-14 justify-start rounded-2xl border-border/70 bg-background/70 px-4 text-base transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-background"
-									disabled={status === "pending" || !openConnectModal}
-									onClick={() => openConnectModal?.()}
-								>
-									<WalletCards className="mr-3 h-7 w-7" />
-									<span className="truncate">More wallets</span>
-								</Button>
 							</CardContent>
 						</Card>
 					</div>
