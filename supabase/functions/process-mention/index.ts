@@ -7,6 +7,9 @@ import {
 	Wallet,
 } from "https://esm.sh/ethers@6.13.4";
 
+// Use `any` to avoid strict type checking for tables not in generated types
+type SupabaseAny = ReturnType<typeof createClient>;
+
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
 	"Access-Control-Allow-Headers":
@@ -194,7 +197,7 @@ function isInternalServiceCall(req: Request): boolean {
 async function verifyWebhookSignature(params: {
 	req: Request;
 	rawBody: string;
-	supabase: ReturnType<typeof createClient>;
+	supabase: any;
 }) {
 	const secret = Deno.env.get("X_WEBHOOK_SECRET");
 	if (!secret) return;
@@ -254,7 +257,7 @@ async function verifyWebhookSignature(params: {
 }
 
 async function fetchCreatorByHandle(
-	supabase: ReturnType<typeof createClient>,
+	supabase: any,
 	xHandle?: string | null,
 ) {
 	const normalizedHandle = normalizeHandle(xHandle);
@@ -267,7 +270,7 @@ async function fetchCreatorByHandle(
 	return data;
 }
 
-async function fetchOpenEpoch(supabase: ReturnType<typeof createClient>) {
+async function fetchOpenEpoch(supabase: any) {
 	const { data } = await supabase
 		.from("epochs")
 		.select("id, reward_pool")
@@ -279,7 +282,7 @@ async function fetchOpenEpoch(supabase: ReturnType<typeof createClient>) {
 }
 
 async function createPostFromMention(params: {
-	supabase: ReturnType<typeof createClient>;
+	supabase: any;
 	creatorId: string;
 	creatorWallet: string;
 	epochId: number;
@@ -359,7 +362,7 @@ async function executeDonationTransfer(
 }
 
 async function buildAskResponse(
-	supabase: ReturnType<typeof createClient>,
+	supabase: any,
 	question: string,
 ) {
 	const mentionedHandle = question.match(/@[a-z0-9_]+/i)?.[0];
