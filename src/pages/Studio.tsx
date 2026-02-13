@@ -1,3 +1,4 @@
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { motion } from "framer-motion";
 import {
 	ArrowLeft,
@@ -198,9 +199,26 @@ function resolveWalletLoginError(error: unknown, connectorName: string) {
 	return `${message} ${retryHint}`;
 }
 
+function isWalletConnectConnector(connector: { id: string; name: string }) {
+	const id = connector.id.toLowerCase();
+	const name = connector.name.toLowerCase();
+	return id.includes("walletconnect") || name.includes("walletconnect");
+}
+
+function isBrowserWalletConnector(connector: { id: string; name: string }) {
+	const id = connector.id.toLowerCase();
+	const name = connector.name.toLowerCase();
+	return (
+		id.includes("injected") ||
+		name.includes("browser wallet") ||
+		name === "injected"
+	);
+}
+
 export default function Studio() {
 	const { address, isConnected } = useAccount();
 	const { connectAsync, connectors, status, variables } = useConnect();
+	const { openConnectModal } = useConnectModal();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [profile, setProfile] = useState<CreatorProfile>(null);
@@ -276,7 +294,11 @@ export default function Studio() {
 	}, [connectors]);
 
 	const topConnectorOptions = useMemo(() => {
-		const source = connectorOptions;
+		const source = connectorOptions.filter(
+			(connector) =>
+				!isWalletConnectConnector(connector) &&
+				!isBrowserWalletConnector(connector),
+		);
 		const used = new Set<string>();
 		const ordered: typeof source = [];
 
@@ -284,7 +306,6 @@ export default function Studio() {
 			(name: string) => name.includes("metamask"),
 			(name: string) => name.includes("trust"),
 			(name: string) => name.includes("brave"),
-			(name: string) => name.includes("walletconnect"),
 			(name: string) => name.includes("base"),
 			(name: string) => name.includes("coinbase"),
 			(name: string) => name.includes("rainbow"),
@@ -1276,6 +1297,17 @@ export default function Studio() {
 								{connectError ? (
 									<p className="text-sm text-destructive">{connectError}</p>
 								) : null}
+
+								<Button
+									type="button"
+									variant="outline"
+									className="h-14 justify-start rounded-2xl border-border/70 bg-background/70 px-4 text-base transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/45 hover:bg-background"
+									disabled={status === "pending" || !openConnectModal}
+									onClick={() => openConnectModal?.()}
+								>
+									<WalletCards className="mr-3 h-7 w-7" />
+									<span className="truncate">More wallets</span>
+								</Button>
 							</CardContent>
 						</Card>
 					</div>

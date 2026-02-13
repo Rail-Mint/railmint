@@ -11,6 +11,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +20,6 @@ import {
 	CardFooter,
 	CardHeader,
 } from "@/components/ui/card";
-import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { PageLoader } from "@/components/ui/page-loader";
 import {
 	Select,
@@ -76,7 +76,9 @@ export default function Feed() {
 	const [epochFilter, setEpochFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);
 	const [totalPages, setTotalPages] = useState(1);
-	const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
+	const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>(
+		{},
+	);
 
 	useEffect(() => {
 		void loadData();
@@ -215,7 +217,7 @@ export default function Feed() {
 				<div className="pointer-events-none absolute -top-20 right-[-4.5rem] h-52 w-52 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.22),_transparent_70%)] blur-2xl" />
 				<div className="pointer-events-none absolute -left-14 top-14 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_72%)] blur-xl" />
 
-				<div className="relative z-10 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+				<div className="relative z-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
 					<div>
 						<p className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
 							<Sparkles className="h-3.5 w-3.5" />
@@ -230,7 +232,7 @@ export default function Feed() {
 						</p>
 					</div>
 
-					<div className="grid w-full grid-cols-1 gap-2 sm:w-auto sm:grid-cols-3">
+					<div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:w-auto lg:grid-cols-3 lg:shrink-0">
 						<Select
 							value={epochFilter}
 							onValueChange={(value) => {
@@ -238,7 +240,7 @@ export default function Feed() {
 								setPage(1);
 							}}
 						>
-							<SelectTrigger className="h-10 w-full border-primary/25 bg-background/80 sm:w-[150px]">
+							<SelectTrigger className="h-10 w-full border-primary/25 bg-background/80 lg:w-[150px]">
 								<SelectValue placeholder="Epoch" />
 							</SelectTrigger>
 							<SelectContent>
@@ -254,7 +256,7 @@ export default function Feed() {
 						<Button
 							variant="outline"
 							size="sm"
-							className="h-10 w-full border-primary/30 bg-background/80 sm:w-auto"
+							className="h-10 w-full justify-center border-primary/30 bg-background/80 lg:w-auto"
 							onClick={() =>
 								setSort((current) =>
 									current === "latest" ? "popular" : "latest",
@@ -268,7 +270,7 @@ export default function Feed() {
 						<Button
 							variant={trustFirst ? "default" : "outline"}
 							size="sm"
-							className="h-10 w-full sm:w-auto"
+							className="h-10 w-full justify-center min-[480px]:col-span-2 lg:col-span-1 lg:w-auto"
 							onClick={() => setTrustFirst((value) => !value)}
 						>
 							<Shield className="mr-1.5 h-4 w-4" />
@@ -293,130 +295,135 @@ export default function Feed() {
 			) : (
 				<>
 					<div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-						{sortedPosts.map((post, idx) => (
+						{sortedPosts.map((post, idx) =>
 							(() => {
 								const isExpanded = Boolean(expandedPosts[post.id]);
 								const isLongPost = post.content_text.length > 260;
 
 								return (
-							<motion.div
-								key={post.id}
-								custom={idx}
-								initial="hidden"
-								whileInView="visible"
-								viewport={{ once: true, amount: 0.2 }}
-								variants={cardReveal}
-							>
-								<Card className="group flex h-full flex-col overflow-hidden border-border/70 bg-background/75 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_18px_42px_-22px_rgba(245,158,11,0.6)]">
-									<CardHeader className="relative border-b border-border/60 pb-3">
-										<div className="pointer-events-none absolute right-[-2.5rem] top-[-2.5rem] h-20 w-20 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.14),_transparent_70%)]" />
-										<div className="flex items-start justify-between gap-3">
-											<div>
-												<p className="text-sm font-semibold tracking-tight">
-													{post.creator?.clone_name || "Unknown"}
-												</p>
-												<p className="text-xs text-muted-foreground">
-													{post.creator?.x_handle || "anon creator"}
-												</p>
-											</div>
-											<div className="flex flex-wrap items-center justify-end gap-1.5">
-												{post.commit_tx_hash ? (
-													<Badge
-														variant="outline"
-														className="gap-1 border-primary/35 bg-primary/10 text-[11px]"
-													>
-														<Shield className="h-3 w-3" /> Verified
-													</Badge>
-												) : null}
-												{post.is_fallback ? (
-													<Badge variant="secondary" className="text-[11px]">
-														Fallback
-													</Badge>
-												) : null}
-											</div>
-										</div>
-									</CardHeader>
+									<motion.div
+										key={post.id}
+										custom={idx}
+										initial="hidden"
+										whileInView="visible"
+										viewport={{ once: true, amount: 0.2 }}
+										variants={cardReveal}
+									>
+										<Card className="group flex h-full flex-col overflow-hidden border-border/70 bg-background/75 transition-all duration-300 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_18px_42px_-22px_rgba(245,158,11,0.6)]">
+											<CardHeader className="relative border-b border-border/60 pb-3">
+												<div className="pointer-events-none absolute right-[-2.5rem] top-[-2.5rem] h-20 w-20 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.14),_transparent_70%)]" />
+												<div className="flex items-start justify-between gap-3">
+													<div>
+														<p className="text-sm font-semibold tracking-tight">
+															{post.creator?.clone_name || "Unknown"}
+														</p>
+														<p className="text-xs text-muted-foreground">
+															{post.creator?.x_handle || "anon creator"}
+														</p>
+													</div>
+													<div className="flex flex-wrap items-center justify-end gap-1.5">
+														{post.commit_tx_hash ? (
+															<Badge
+																variant="outline"
+																className="gap-1 border-primary/35 bg-primary/10 text-[11px]"
+															>
+																<Shield className="h-3 w-3" /> Verified
+															</Badge>
+														) : null}
+														{post.is_fallback ? (
+															<Badge
+																variant="secondary"
+																className="text-[11px]"
+															>
+																Fallback
+															</Badge>
+														) : null}
+													</div>
+												</div>
+											</CardHeader>
 
-									<CardContent className="flex-1 pt-4">
-										<p
-											className={`text-sm leading-relaxed text-foreground/90 ${
-												isExpanded ? "" : "line-clamp-5"
-											}`}
-										>
-											{post.content_text}
-										</p>
-										{isLongPost ? (
-											<Button
-												type="button"
-												variant="link"
-												size="sm"
-												className="mt-1 h-auto px-0"
-												onClick={() =>
-													setExpandedPosts((prev) => ({
-														...prev,
-														[post.id]: !isExpanded,
-													}))
-												}
-											>
-												{isExpanded ? "Show less" : "Read more"}
-											</Button>
-										) : null}
-									</CardContent>
-
-									<CardFooter className="flex flex-col items-start gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
-										<div className="flex items-center gap-2">
-											<Button
-												variant="ghost"
-												size="sm"
-												className={
-													post.liked_by_me
-														? "text-destructive"
-														: "text-muted-foreground"
-												}
-												onClick={() => toggleLike(post.id, post.liked_by_me)}
-											>
-												<Heart
-													className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
-												/>
-												{post.like_count}
-											</Button>
-											{post.like_count >= 10 ? (
-												<Badge
-													variant="outline"
-													className="gap-1 border-primary/35 bg-primary/10 text-[11px] text-primary"
+											<CardContent className="flex-1 pt-4">
+												<p
+													className={`text-sm leading-relaxed text-foreground/90 ${
+														isExpanded ? "" : "line-clamp-5"
+													}`}
 												>
-													<Flame className="h-3 w-3" /> Trending
-												</Badge>
-											) : null}
-										</div>
+													{post.content_text}
+												</p>
+												{isLongPost ? (
+													<Button
+														type="button"
+														variant="link"
+														size="sm"
+														className="mt-1 h-auto px-0"
+														onClick={() =>
+															setExpandedPosts((prev) => ({
+																...prev,
+																[post.id]: !isExpanded,
+															}))
+														}
+													>
+														{isExpanded ? "Show less" : "Read more"}
+													</Button>
+												) : null}
+											</CardContent>
 
-										<div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
-											<span className="flex items-center gap-1 text-xs text-muted-foreground">
-												<Clock3 className="h-3 w-3" />
-												{formatDistanceToNow(new Date(post.created_at), {
-													addSuffix: true,
-												})}
-											</span>
-											<Button
-												variant="ghost"
-												size="sm"
-												asChild
-												className="group text-primary hover:text-primary"
-											>
-												<Link to={`/post/${post.id}`}>
-													View
-													<span className="ml-1 transition-transform duration-200 group-hover:translate-x-0.5">
-														&rarr;
+											<CardFooter className="flex flex-col items-start gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
+												<div className="flex items-center gap-2">
+													<Button
+														variant="ghost"
+														size="sm"
+														className={
+															post.liked_by_me
+																? "text-destructive"
+																: "text-muted-foreground"
+														}
+														onClick={() =>
+															toggleLike(post.id, post.liked_by_me)
+														}
+													>
+														<Heart
+															className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
+														/>
+														{post.like_count}
+													</Button>
+													{post.like_count >= 10 ? (
+														<Badge
+															variant="outline"
+															className="gap-1 border-primary/35 bg-primary/10 text-[11px] text-primary"
+														>
+															<Flame className="h-3 w-3" /> Trending
+														</Badge>
+													) : null}
+												</div>
+
+												<div className="flex w-full flex-wrap items-center justify-between gap-2 sm:w-auto sm:justify-end sm:gap-3">
+													<span className="flex items-center gap-1 text-xs text-muted-foreground">
+														<Clock3 className="h-3 w-3" />
+														{formatDistanceToNow(new Date(post.created_at), {
+															addSuffix: true,
+														})}
 													</span>
-												</Link>
-											</Button>
-										</div>
-									</CardFooter>
-								</Card>
-							</motion.div>
+													<Button
+														variant="ghost"
+														size="sm"
+														asChild
+														className="group text-primary hover:text-primary"
+													>
+														<Link to={`/post/${post.id}`}>
+															View
+															<span className="ml-1 transition-transform duration-200 group-hover:translate-x-0.5">
+																&rarr;
+															</span>
+														</Link>
+													</Button>
+												</div>
+											</CardFooter>
+										</Card>
+									</motion.div>
 								);
-							})()
-						))}
+							})(),
+						)}
 					</div>
 
 					<div className="mt-6 flex items-center justify-between gap-3 rounded-xl bg-background/70 px-3 py-2">
