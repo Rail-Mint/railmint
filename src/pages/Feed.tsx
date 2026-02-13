@@ -5,8 +5,10 @@ import {
 	Clock3,
 	Flame,
 	Heart,
+	Loader2,
 	Shield,
 	Sparkles,
+	Wand2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -79,6 +81,7 @@ export default function Feed() {
 	const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>(
 		{},
 	);
+	const [generating, setGenerating] = useState(false);
 
 	useEffect(() => {
 		void loadData();
@@ -188,6 +191,36 @@ export default function Feed() {
 		);
 	}
 
+	async function handleGeneratePost() {
+		if (!address) {
+			toast({
+				title: "Connect wallet",
+				description: "Connect your wallet first to generate a post.",
+				variant: "destructive",
+			});
+			return;
+		}
+		setGenerating(true);
+		try {
+			const { data, error } = await supabase.functions.invoke("generate-post", {
+				body: { wallet_address: address },
+			});
+			if (error) throw error;
+			if (data?.error) throw new Error(data.error);
+			toast({ title: "Post generated!", description: "Your AI post is now live in the feed." });
+			setPage(1);
+			await loadData();
+		} catch (err: any) {
+			toast({
+				title: "Generation failed",
+				description: err?.message || "Could not generate post.",
+				variant: "destructive",
+			});
+		} finally {
+			setGenerating(false);
+		}
+	}
+
 	const sortedPosts = [...posts].sort((a, b) => {
 		if (trustFirst) {
 			const trustDelta =
@@ -230,6 +263,17 @@ export default function Feed() {
 							Discover AI-generated BNB ecosystem posts, sort by momentum, and
 							reward the clones producing standout content.
 						</p>
+						{address && (
+							<Button
+								onClick={handleGeneratePost}
+								disabled={generating}
+								className="mt-3 gap-2"
+								size="sm"
+							>
+								{generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+								{generating ? "Generating…" : "Generate Post"}
+							</Button>
+						)}
 					</div>
 
 					<div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:w-auto lg:grid-cols-3 lg:shrink-0">
