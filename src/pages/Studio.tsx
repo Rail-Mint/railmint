@@ -14,12 +14,14 @@ import {
 	Shield,
 	Sparkles,
 	Trophy,
+	User,
 	UserCog,
 	WalletCards,
 	X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { keccak256, toHex } from "viem";
 import { useAccount, useConnect } from "wagmi";
 // eslint-disable-next-line @typescript-eslint/no-deprecated
 import { BrandMark } from "@/components/branding/BrandMark";
@@ -28,7 +30,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/components/ui/use-toast";
+import { XIcon } from "@/components/ui/x-icon";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
+import { usePublishContent } from "@/hooks/useContentManager";
 import { supabase } from "@/integrations/supabase/client";
 
 type CreatorProfile = {
@@ -222,6 +227,15 @@ export default function Studio() {
 	const { openConnectModal } = useConnectModal();
 	const navigate = useNavigate();
 	const location = useLocation();
+	const { toast } = useToast();
+	const {
+		publishContent,
+		hash: txHash,
+		isPending: isTxPending,
+		isConfirming: isTxConfirming,
+		isSuccess: isTxSuccess,
+		error: txError,
+	} = usePublishContent();
 	const [profile, setProfile] = useState<CreatorProfile>(null);
 	const [stats, setStats] = useState<StudioStats>({
 		postsCount: 0,
@@ -456,6 +470,34 @@ export default function Studio() {
 			}
 		};
 	}, []);
+
+	useEffect(() => {
+		if (isTxPending || isTxConfirming) {
+			toast({
+				title: "Transaction pending",
+				description: "Your post is being published to the blockchain...",
+			});
+		}
+	}, [isTxPending, isTxConfirming, toast]);
+
+	useEffect(() => {
+		if (isTxSuccess && txHash) {
+			toast({
+				title: "Published on-chain!",
+				description: `Transaction: ${txHash.slice(0, 10)}...${txHash.slice(-8)}`,
+			});
+		}
+	}, [isTxSuccess, txHash, toast]);
+
+	useEffect(() => {
+		if (txError) {
+			toast({
+				title: "Blockchain transaction failed",
+				description: txError.message || "Failed to publish on-chain",
+				variant: "destructive",
+			});
+		}
+	}, [txError, toast]);
 
 	useEffect(() => {
 		const preferenceKey = "railmint.studio.preferences.v1";
@@ -731,12 +773,14 @@ export default function Studio() {
 		if (!address) return;
 		setGeneratingPost(true);
 		try {
+			// Step 1: Generate post via Supabase function
 			const { data, error } = await supabase.functions.invoke("generate-post", {
 				body: { wallet_address: address },
 			});
 			if (error) throw error;
 			if (data?.error) throw new Error(data.error);
-			// Reload posts
+
+			// Step 2: Reload posts from Supabase
 			if (profile) {
 				const { data: posts } = await supabase
 					.from("posts")
@@ -744,12 +788,47 @@ export default function Studio() {
 					.eq("creator_id", profile.id)
 					.order("created_at", { ascending: false })
 					.limit(10);
-				if (posts) {
+				if (posts && posts.length > 0) {
 					setRecentPosts(posts.map((p) => ({ ...p, like_count: 0 })));
+
+					// Step 3: Publish latest post to blockchain
+					const latestPost = posts[0];
+					if (latestPost.content_text) {
+						try {
+							// Generate content hash from post text
+							const contentHash = keccak256(toHex(latestPost.content_text));
+							// Convert creator ID to bigint
+							const creatorIdBigInt = BigInt(profile.id);
+							// Use empty string for IPFS URI (can be updated later)
+							const ipfsUri = "";
+
+							// Publish to blockchain
+							publishContent(creatorIdBigInt, contentHash, ipfsUri);
+
+							toast({
+								title: "Publishing to blockchain",
+								description: "Your post is being published on-chain...",
+							});
+						} catch (blockchainError) {
+							console.error("Blockchain publish error:", blockchainError);
+							toast({
+								title: "Blockchain publish failed",
+								description:
+									"Post saved to database but blockchain publishing failed. You can retry later.",
+								variant: "destructive",
+							});
+						}
+					}
 				}
 			}
 		} catch (err: any) {
 			console.error("Generate post error:", err);
+			toast({
+				title: "Post generation failed",
+				description:
+					err.message || "An error occurred while generating the post",
+				variant: "destructive",
+			});
 		} finally {
 			setGeneratingPost(false);
 		}
@@ -814,64 +893,122 @@ export default function Studio() {
 			case "overview":
 				return (
 					<div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-						<Card className="border-border/70 bg-background/80">
-							<CardHeader>
-								<CardTitle>Studio Snapshot</CardTitle>
+						<Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-slate-950/90 shadow-2xl shadow-black/20 backdrop-blur-xl">
+							<div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-500/10 blur-3xl" />
+							<CardHeader className="relative pb-2">
+								<CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
+									<LayoutGrid className="h-5 w-5 text-amber-400" />
+									Studio Overview
+								</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-3 text-sm text-muted-foreground">
-								<p>
-									Profile completion:{" "}
-									<span className="font-semibold text-foreground">
-										{profileCompletion}%
-									</span>
-								</p>
-								<p>
-									Posts in last 7 days:{" "}
-									<span className="font-semibold text-foreground">
-										{recentPostsLast7Days}
-									</span>
-								</p>
-								<p>
-									Average likes per post:{" "}
-									<span className="font-semibold text-foreground">
-										{averageLikes.toFixed(1)}
-									</span>
-								</p>
-								{openEpoch ? (
-									<p>
-										Open epoch #{openEpoch.id} ({openEpoch.status}) ends{" "}
-										{formatDate(openEpoch.end_at)}.
+							<CardContent className="relative space-y-4">
+								<div className="grid gap-3 sm:grid-cols-2">
+									<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+										<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+										<p className="relative text-xs font-medium uppercase tracking-wider text-slate-400">
+											Profile
+										</p>
+										<p className="relative mt-1 text-2xl font-bold text-white">
+											{profileCompletion}%
+										</p>
+										<div className="relative mt-2 h-1.5 rounded-full bg-white/10">
+											<div
+												className="h-full rounded-full bg-gradient-to-r from-amber-500 to-amber-400 shadow-lg shadow-amber-500/50"
+												style={{ width: `${profileCompletion}%` }}
+											/>
+										</div>
+									</div>
+									<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+										<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+										<p className="relative text-xs font-medium uppercase tracking-wider text-slate-400">
+											Posts (7d)
+										</p>
+										<p className="relative mt-1 text-2xl font-bold text-white">
+											{recentPostsLast7Days}
+										</p>
+									</div>
+								</div>
+								<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+									<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+									<p className="relative text-xs font-medium uppercase tracking-wider text-slate-400">
+										Avg. Likes
 									</p>
+									<p className="relative mt-1 text-2xl font-bold text-white">
+										{averageLikes.toFixed(1)}
+									</p>
+								</div>
+								{openEpoch ? (
+									<div className="group relative rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 transition-all duration-300 hover:border-amber-500/50 hover:bg-amber-500/10">
+										<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+										<div className="relative flex items-center gap-2">
+											<div className="h-2 w-2 animate-pulse rounded-full bg-amber-400 shadow-lg shadow-amber-400/50" />
+											<p className="text-sm font-medium text-white">
+												Epoch #{openEpoch.id} ({openEpoch.status})
+											</p>
+										</div>
+										<p className="relative mt-1 text-xs text-slate-400">
+											Ends {formatDate(openEpoch.end_at)}
+										</p>
+									</div>
 								) : (
-									<p>No open epoch right now.</p>
+									<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-white/20 hover:bg-white/10">
+										<p className="relative text-sm text-slate-400">
+											No open epoch right now
+										</p>
+									</div>
 								)}
 							</CardContent>
 						</Card>
-						<Card className="border-border/70 bg-background/80">
-							<CardHeader>
-								<CardTitle>Quick Actions</CardTitle>
+						<Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-slate-950/90 shadow-2xl shadow-black/20 backdrop-blur-xl">
+							<div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-purple-500/10 blur-3xl" />
+							<CardHeader className="relative pb-2">
+								<CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
+									<Sparkles className="h-5 w-5 text-purple-400" />
+									Quick Actions
+								</CardTitle>
 							</CardHeader>
-							<CardContent className="space-y-2">
+							<CardContent className="relative space-y-2.5">
 								<Button
 									asChild
 									variant="outline"
-									className="w-full justify-start"
+									className="w-full justify-start rounded-xl border-white/10 bg-white/5 text-slate-300 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10 hover:text-white"
 								>
-									<Link to="/feed">Open Feed</Link>
+									<Link to="/feed" className="flex items-center gap-3">
+										<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10">
+											<FileText className="h-4 w-4 text-primary" />
+										</div>
+										Open Feed
+									</Link>
 								</Button>
 								<Button
 									asChild
 									variant="outline"
-									className="w-full justify-start"
+									className="w-full justify-start rounded-xl border-border/60 bg-background/60 hover:border-primary/40 hover:bg-primary/5"
 								>
-									<Link to="/studio/content">Review Content</Link>
+									<Link
+										to="/studio/content"
+										className="flex items-center gap-3"
+									>
+										<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-secondary/60">
+											<BarChart3 className="h-4 w-4 text-muted-foreground" />
+										</div>
+										Review Content
+									</Link>
 								</Button>
 								<Button
 									asChild
 									variant="outline"
-									className="w-full justify-start"
+									className="w-full justify-start rounded-xl border-border/60 bg-background/60 hover:border-primary/40 hover:bg-primary/5"
 								>
-									<Link to="/studio/rewards">Open Reward History</Link>
+									<Link
+										to="/studio/rewards"
+										className="flex items-center gap-3"
+									>
+										<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10">
+											<Gift className="h-4 w-4 text-amber-500" />
+										</div>
+										Reward History
+									</Link>
 								</Button>
 							</CardContent>
 						</Card>
@@ -880,15 +1017,23 @@ export default function Studio() {
 
 			case "profile":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Profile and Persona</CardTitle>
+					<Card className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-slate-950/90 shadow-2xl shadow-black/20 backdrop-blur-xl">
+						<div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-500/10 blur-3xl" />
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg font-semibold text-white">
+								<User className="h-5 w-5 text-amber-400" />
+								Profile and Persona
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-4">
+						<CardContent className="relative space-y-4">
 							<div className="grid gap-3 sm:grid-cols-2">
-								<div>
-									<p className="mb-1 text-sm font-medium">Clone name</p>
+								<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+									<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+									<p className="relative mb-2 text-sm font-medium text-slate-300">
+										Clone name
+									</p>
 									<Input
+										className="relative border-white/10 bg-white/5 text-white placeholder:text-slate-500"
 										value={profileForm.clone_name}
 										onChange={(event) =>
 											setProfileForm((prev) => ({
@@ -898,9 +1043,13 @@ export default function Studio() {
 										}
 									/>
 								</div>
-								<div>
-									<p className="mb-1 text-sm font-medium">X handle</p>
+								<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+									<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+									<p className="relative mb-2 text-sm font-medium text-slate-300">
+										X handle
+									</p>
 									<Input
+										className="relative border-white/10 bg-white/5 text-white placeholder:text-slate-500"
 										value={profileForm.x_handle}
 										onChange={(event) =>
 											setProfileForm((prev) => ({
@@ -911,9 +1060,13 @@ export default function Studio() {
 									/>
 								</div>
 							</div>
-							<div>
-								<p className="mb-1 text-sm font-medium">Persona text</p>
+							<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+								<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+								<p className="relative mb-2 text-sm font-medium text-slate-300">
+									Persona text
+								</p>
 								<Textarea
+									className="relative border-white/10 bg-white/5 text-white placeholder:text-slate-500"
 									rows={5}
 									value={profileForm.persona_text}
 									onChange={(event) =>
@@ -924,9 +1077,13 @@ export default function Studio() {
 									}
 								/>
 							</div>
-							<div>
-								<p className="mb-1 text-sm font-medium">Prompt template</p>
+							<div className="group relative rounded-2xl border border-white/10 bg-white/5 p-4 transition-all duration-300 hover:border-amber-500/30 hover:bg-white/10">
+								<div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+								<p className="relative mb-2 text-sm font-medium text-slate-300">
+									Prompt template
+								</p>
 								<Textarea
+									className="relative border-white/10 bg-white/5 text-white placeholder:text-slate-500"
 									rows={5}
 									value={profileForm.prompt_template}
 									onChange={(event) =>
@@ -944,6 +1101,7 @@ export default function Studio() {
 										void handleSaveProfile();
 									}}
 									disabled={!canSaveProfile || profileSaveState === "saving"}
+									className="gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-black hover:from-amber-400 hover:to-amber-300"
 								>
 									{profileSaveState === "saving" ? "Saving..." : "Save Profile"}
 								</Button>
@@ -951,8 +1109,8 @@ export default function Studio() {
 									<p
 										className={`text-sm ${
 											profileSaveState === "error"
-												? "text-destructive"
-												: "text-muted-foreground"
+												? "text-red-400"
+												: "text-green-400"
 										}`}
 									>
 										{profileSaveMessage}
@@ -965,42 +1123,83 @@ export default function Studio() {
 
 			case "content":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader className="flex flex-row items-center justify-between">
-							<CardTitle>Recent Content</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-primary/[0.03] shadow-xl shadow-black/5">
+						<CardHeader className="relative flex flex-row items-center justify-between pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<FileText className="h-5 w-5 text-primary" />
+								Recent Content
+							</CardTitle>
 							<Button
 								onClick={handleGeneratePost}
-								disabled={generatingPost}
+								disabled={generatingPost || isTxPending || isTxConfirming}
 								size="sm"
-								className="gap-2"
+								className="gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 text-black hover:from-amber-400 hover:to-amber-300"
 							>
-								{generatingPost ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-								{generatingPost ? "Generating…" : "Generate Post"}
+								{generatingPost || isTxPending || isTxConfirming ? (
+									<Loader2 className="h-4 w-4 animate-spin" />
+								) : (
+									<Sparkles className="h-4 w-4" />
+								)}
+								{generatingPost
+									? "Generating…"
+									: isTxPending || isTxConfirming
+										? "Publishing…"
+										: "Generate Post"}
 							</Button>
 						</CardHeader>
-						<CardContent className="space-y-3">
-							{recentPosts.length === 0 ? (
-								<p className="text-sm text-muted-foreground">
-									No content yet. Hit Generate Post above to create your first AI post.
-								</p>
-							) : (
-								recentPosts.slice(0, 8).map((post) => (
-									<div
-										key={post.id}
-										className="rounded-xl border border-border/70 bg-background/70 p-3"
-									>
-										<p className="line-clamp-2 text-sm text-foreground">
-											{post.content_text}
-										</p>
-										<p className="mt-1 text-xs text-muted-foreground">
-											{post.like_count} likes · epoch {post.epoch_id} ·{" "}
-											{formatDate(post.created_at)}
-										</p>
-									</div>
-								))
+						<CardContent className="relative space-y-3">
+							{isTxSuccess && txHash && (
+								<div className="rounded-xl border border-green-500/30 bg-green-500/5 p-3">
+									<p className="text-sm font-medium text-green-600 dark:text-green-400">
+										✓ Published on-chain!
+									</p>
+									<p className="mt-1 text-xs font-mono text-muted-foreground">
+										TX: {txHash.slice(0, 10)}...{txHash.slice(-8)}
+									</p>
+								</div>
 							)}
-							<div className="flex flex-wrap gap-2">
-								<Button asChild variant="outline" size="sm">
+							{recentPosts.length === 0 ? (
+								<div className="rounded-2xl border border-dashed border-border/60 bg-secondary/20 p-8 text-center">
+									<Sparkles className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+									<p className="text-sm text-muted-foreground">
+										No content yet. Hit Generate Post above to create your first
+										AI post.
+									</p>
+								</div>
+							) : (
+								<div className="grid gap-3 sm:grid-cols-2">
+									{recentPosts.slice(0, 8).map((post) => (
+										<div
+											key={post.id}
+											className="group rounded-2xl border border-border/60 bg-background/60 p-4 transition-all duration-200 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
+										>
+											<p className="line-clamp-3 text-sm text-foreground">
+												{post.content_text}
+											</p>
+											<div className="mt-3 flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													<div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+														{post.like_count}
+													</div>
+													<span className="text-xs text-muted-foreground">
+														likes
+													</span>
+												</div>
+												<span className="rounded-full bg-secondary/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+													Epoch {post.epoch_id}
+												</span>
+											</div>
+										</div>
+									))}
+								</div>
+							)}
+							<div className="flex flex-wrap gap-2 pt-2">
+								<Button
+									asChild
+									variant="outline"
+									size="sm"
+									className="rounded-xl"
+								>
 									<Link to="/feed">Open Feed</Link>
 								</Button>
 							</div>
@@ -1011,30 +1210,57 @@ export default function Studio() {
 			case "analytics":
 				return (
 					<div className="grid gap-4 lg:grid-cols-3">
-						<Card className="border-border/70 bg-background/80">
-							<CardHeader>
-								<CardTitle className="text-sm">Total likes</CardTitle>
+						<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-primary/[0.03] shadow-xl shadow-black/5">
+							<div className="absolute right-0 top-0 h-20 w-20 rounded-full bg-primary/10 blur-2xl" />
+							<CardHeader className="relative pb-2">
+								<CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider">
+									<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+										<BarChart3 className="h-4 w-4 text-primary" />
+									</div>
+									Total Likes
+								</CardTitle>
 							</CardHeader>
-							<CardContent className="text-2xl font-semibold">
+							<CardContent className="relative text-3xl font-bold tracking-tight">
 								{totalLikes}
 							</CardContent>
 						</Card>
-						<Card className="border-border/70 bg-background/80">
-							<CardHeader>
-								<CardTitle className="text-sm">Average likes/post</CardTitle>
+						<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-accent/[0.03] shadow-xl shadow-black/5">
+							<div className="absolute right-0 top-0 h-20 w-20 rounded-full bg-accent/10 blur-2xl" />
+							<CardHeader className="relative pb-2">
+								<CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider">
+									<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-secondary/60">
+										<Sparkles className="h-4 w-4 text-muted-foreground" />
+									</div>
+									Avg. Likes/Post
+								</CardTitle>
 							</CardHeader>
-							<CardContent className="text-2xl font-semibold">
+							<CardContent className="relative text-3xl font-bold tracking-tight">
 								{averageLikes.toFixed(1)}
 							</CardContent>
 						</Card>
-						<Card className="border-border/70 bg-background/80">
-							<CardHeader>
-								<CardTitle className="text-sm">Best post</CardTitle>
+						<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-amber-500/[0.03] shadow-xl shadow-black/5">
+							<div className="absolute right-0 top-0 h-20 w-20 rounded-full bg-amber-500/10 blur-2xl" />
+							<CardHeader className="relative pb-2">
+								<CardTitle className="flex items-center gap-2 text-sm font-medium uppercase tracking-wider">
+									<div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10">
+										<Trophy className="h-4 w-4 text-amber-500" />
+									</div>
+									Best Post
+								</CardTitle>
 							</CardHeader>
-							<CardContent className="text-sm text-muted-foreground">
-								{bestPost
-									? `${bestPost.like_count} likes · ${formatDate(bestPost.created_at)}`
-									: "No data yet"}
+							<CardContent className="relative text-sm text-muted-foreground">
+								{bestPost ? (
+									<div>
+										<p className="text-2xl font-bold text-foreground">
+											{bestPost.like_count} likes
+										</p>
+										<p className="mt-1 text-xs">
+											{formatDate(bestPost.created_at)}
+										</p>
+									</div>
+								) : (
+									<p>No data yet</p>
+								)}
 							</CardContent>
 						</Card>
 					</div>
@@ -1042,33 +1268,69 @@ export default function Studio() {
 
 			case "leaderboard":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Open Epoch Leaderboard</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-amber-500/[0.03] shadow-xl shadow-black/5">
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<Trophy className="h-5 w-5 text-amber-500" />
+								Epoch Leaderboard
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-3">
+						<CardContent className="relative space-y-3">
 							{topOpenRows.length === 0 ? (
-								<p className="text-sm text-muted-foreground">
-									No open leaderboard rows yet.
-								</p>
+								<div className="rounded-2xl border border-dashed border-border/60 bg-secondary/20 p-8 text-center">
+									<Trophy className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+									<p className="text-sm text-muted-foreground">
+										No open leaderboard rows yet.
+									</p>
+								</div>
 							) : (
-								topOpenRows.map((row) => (
-									<div
-										key={row.id}
-										className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2.5"
-									>
-										<p className="text-sm font-medium">
-											#{row.rank}{" "}
-											{row.creator?.clone_name ??
-												shortAddress(row.creator?.wallet_address)}
-										</p>
-										<p className="text-xs text-muted-foreground">
-											{row.like_count} likes
-										</p>
-									</div>
-								))
+								<div className="space-y-2">
+									{topOpenRows.map((row) => (
+										<div
+											key={row.id}
+											className={`flex items-center justify-between rounded-xl border px-4 py-3 ${
+												row.rank <= 3
+													? "border-amber-500/30 bg-amber-500/5"
+													: "border-border/60 bg-background/60"
+											}`}
+										>
+											<div className="flex items-center gap-3">
+												<div
+													className={`flex h-8 w-8 items-center justify-center rounded-full font-bold ${
+														row.rank === 1
+															? "bg-gradient-to-br from-amber-400 to-amber-600 text-black"
+															: row.rank === 2
+																? "bg-gradient-to-br from-slate-300 to-slate-400 text-black"
+																: row.rank === 3
+																	? "bg-gradient-to-br from-amber-600 to-amber-700 text-white"
+																	: "bg-secondary text-muted-foreground"
+													}`}
+												>
+													{row.rank}
+												</div>
+												<p className="font-medium">
+													{row.creator?.clone_name ??
+														shortAddress(row.creator?.wallet_address)}
+												</p>
+											</div>
+											<div className="flex items-center gap-2">
+												<div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
+													{row.like_count}
+												</div>
+												<span className="text-xs text-muted-foreground">
+													likes
+												</span>
+											</div>
+										</div>
+									))}
+								</div>
 							)}
-							<Button asChild variant="outline" size="sm">
+							<Button
+								asChild
+								variant="outline"
+								size="sm"
+								className="rounded-xl"
+							>
 								<Link to="/leaderboard">Open full leaderboard</Link>
 							</Button>
 						</CardContent>
@@ -1077,32 +1339,60 @@ export default function Studio() {
 
 			case "rewards":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Reward History</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-amber-500/[0.03] shadow-xl shadow-black/5">
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<Gift className="h-5 w-5 text-amber-500" />
+								Reward History
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-3">
+						<CardContent className="relative space-y-3">
 							{rewardHistory.length === 0 ? (
-								<p className="text-sm text-muted-foreground">
-									No reward rows yet.
-								</p>
+								<div className="rounded-2xl border border-dashed border-border/60 bg-secondary/20 p-8 text-center">
+									<Gift className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
+									<p className="text-sm text-muted-foreground">
+										No reward rows yet.
+									</p>
+								</div>
 							) : (
-								rewardHistory.slice(0, 10).map((row) => (
-									<div
-										key={row.id}
-										className="rounded-xl border border-border/70 bg-background/70 p-3"
-									>
-										<p className="text-sm font-medium">
-											Epoch {row.epoch_id} · rank #{row.rank}
-										</p>
-										<p className="text-xs text-muted-foreground">
-											{row.like_count} likes · {formatReward(row.reward_amount)}{" "}
-											tBNB
-										</p>
-									</div>
-								))
+								<div className="grid gap-3 sm:grid-cols-2">
+									{rewardHistory.slice(0, 10).map((row) => (
+										<div
+											key={row.id}
+											className="group rounded-2xl border border-border/60 bg-background/60 p-4 transition-all duration-200 hover:border-amber-500/30 hover:shadow-lg hover:shadow-amber-500/5"
+										>
+											<div className="flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													<div
+														className={`flex h-7 w-7 items-center justify-center rounded-full font-bold ${
+															row.rank <= 3
+																? "bg-gradient-to-br from-amber-400 to-amber-600 text-black"
+																: "bg-secondary text-muted-foreground"
+														}`}
+													>
+														{row.rank}
+													</div>
+													<span className="font-medium">
+														Epoch {row.epoch_id}
+													</span>
+												</div>
+												<div className="rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-500">
+													{formatReward(row.reward_amount)} tBNB
+												</div>
+											</div>
+											<p className="mt-2 text-xs text-muted-foreground">
+												{row.like_count} likes
+											</p>
+										</div>
+									))}
+								</div>
 							)}
-							<Button asChild variant="outline" size="sm">
+							<Button
+								asChild
+								variant="outline"
+								size="sm"
+								className="rounded-xl"
+							>
 								<Link to="/rewards">Open rewards board</Link>
 							</Button>
 						</CardContent>
@@ -1111,22 +1401,30 @@ export default function Studio() {
 
 			case "wallet":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Wallet and Payout</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-primary/[0.03] shadow-xl shadow-black/5">
+						<div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-primary/8 blur-2xl" />
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<WalletCards className="h-5 w-5 text-primary" />
+								Wallet & Payout
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-3 text-sm text-muted-foreground">
-							<p>
-								Connected wallet:{" "}
-								<span className="font-medium text-foreground">{address}</span>
-							</p>
-							<p>
-								Payout wallet:{" "}
-								<span className="font-medium text-foreground">
+						<CardContent className="relative space-y-4">
+							<div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+								<p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Connected Wallet
+								</p>
+								<p className="font-mono text-sm font-medium">{address}</p>
+							</div>
+							<div className="rounded-2xl border border-primary/30 bg-primary/5 p-4">
+								<p className="mb-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Payout Wallet
+								</p>
+								<p className="font-mono text-sm font-medium">
 									{profile.wallet_address}
-								</span>
-							</p>
-							<p>
+								</p>
+							</div>
+							<p className="rounded-xl bg-secondary/30 p-3 text-xs text-muted-foreground">
 								For security, payout destination follows your verified creator
 								wallet.
 							</p>
@@ -1136,46 +1434,85 @@ export default function Studio() {
 
 			case "security":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Security Checklist</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-accent/[0.03] shadow-xl shadow-black/5">
+						<div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-accent/8 blur-2xl" />
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<Shield className="h-5 w-5 text-accent-foreground" />
+								Security Checklist
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-2 text-sm text-muted-foreground">
-							<p>Use wallet signatures only on trusted RailMint screens.</p>
-							<p>Confirm domain and network before approving transactions.</p>
-							<p>Disconnect browser wallet extensions you do not use.</p>
-							<p>Use a hardware wallet for larger balances.</p>
+						<CardContent className="relative space-y-3">
+							{[
+								"Use wallet signatures only on trusted RailMint screens",
+								"Confirm domain and network before approving transactions",
+								"Disconnect browser wallet extensions you do not use",
+								"Use a hardware wallet for larger balances",
+							].map((item, i) => (
+								<div
+									key={i}
+									className="flex items-start gap-3 rounded-xl border border-border/60 bg-background/60 p-3"
+								>
+									<div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10">
+										<Shield className="h-3 w-3 text-primary" />
+									</div>
+									<p className="text-sm text-muted-foreground">{item}</p>
+								</div>
+							))}
 						</CardContent>
 					</Card>
 				);
 
 			case "settings":
 				return (
-					<Card className="border-border/70 bg-background/80">
-						<CardHeader>
-							<CardTitle>Workspace Settings</CardTitle>
+					<Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-background/90 via-background/85 to-primary/[0.03] shadow-xl shadow-black/5">
+						<CardHeader className="relative pb-2">
+							<CardTitle className="flex items-center gap-2 text-lg">
+								<Settings className="h-5 w-5 text-muted-foreground" />
+								Workspace Settings
+							</CardTitle>
 						</CardHeader>
-						<CardContent className="space-y-4 text-sm text-muted-foreground">
-							<label className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2">
-								<span>Compact studio density</span>
-								<input
-									type="checkbox"
-									checked={studioDensityCompact}
-									onChange={(event) =>
-										setStudioDensityCompact(event.target.checked)
-									}
-								/>
+						<CardContent className="relative space-y-3">
+							<label className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/60 p-4 transition-colors hover:border-primary/30">
+								<span className="text-sm font-medium">
+									Compact studio density
+								</span>
+								<div
+									className={`relative h-6 w-11 rounded-full transition-colors ${studioDensityCompact ? "bg-primary" : "bg-secondary"}`}
+								>
+									<input
+										type="checkbox"
+										checked={studioDensityCompact}
+										onChange={(event) =>
+											setStudioDensityCompact(event.target.checked)
+										}
+										className="sr-only"
+									/>
+									<div
+										className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${studioDensityCompact ? "translate-x-5" : "translate-x-0"}`}
+									/>
+								</div>
 							</label>
-							<label className="flex items-center justify-between rounded-xl border border-border/70 px-3 py-2">
-								<span>Auto-collapse desktop sidebar</span>
-								<input
-									type="checkbox"
-									checked={autoCollapseSidebar}
-									onChange={(event) => {
-										setAutoCollapseSidebar(event.target.checked);
-										if (event.target.checked) setSidebarCollapsed(true);
-									}}
-								/>
+							<label className="flex cursor-pointer items-center justify-between rounded-xl border border-border/60 bg-background/60 p-4 transition-colors hover:border-primary/30">
+								<span className="text-sm font-medium">
+									Auto-collapse desktop sidebar
+								</span>
+								<div
+									className={`relative h-6 w-11 rounded-full transition-colors ${autoCollapseSidebar ? "bg-primary" : "bg-secondary"}`}
+								>
+									<input
+										type="checkbox"
+										checked={autoCollapseSidebar}
+										onChange={(event) => {
+											setAutoCollapseSidebar(event.target.checked);
+											if (event.target.checked) setSidebarCollapsed(true);
+										}}
+										className="sr-only"
+									/>
+									<div
+										className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${autoCollapseSidebar ? "translate-x-5" : "translate-x-0"}`}
+									/>
+								</div>
 							</label>
 						</CardContent>
 					</Card>
@@ -1388,38 +1725,35 @@ export default function Studio() {
 					</button>
 				) : null}
 				<aside
-					className={`hidden shrink-0 overflow-hidden border-r border-border/70 bg-gradient-to-b from-background/90 to-background/75 backdrop-blur-xl transition-[width,opacity] duration-500 ease-out md:flex md:flex-col ${
+					className={`hidden shrink-0 overflow-hidden rounded-2xl m-3 ml-0 my-3 border border-white/10 bg-gradient-to-b from-slate-900/80 via-slate-900/90 to-amber-950/10 backdrop-blur-2xl shadow-[0_0_40px_-10px_rgba(245,158,11,0.15)] transition-[width,opacity] duration-500 ease-out md:flex md:flex-col ${
 						desktopSidebarHidden
 							? "w-0 opacity-0"
 							: sidebarCollapsed
-								? "w-[84px] opacity-100"
-								: "w-[268px] opacity-100"
+								? "w-[72px] opacity-100"
+								: "w-[260px] opacity-100"
 					}`}
 				>
-					<div
-						className={`relative flex h-16 items-center border-b border-border/60 ${
-							sidebarCollapsed
-								? "h-24 flex-col justify-center gap-1.5 px-2 py-2"
-								: "justify-between px-3 pr-10"
-						}`}
-					>
-						{sidebarCollapsed ? <BrandMark compact markOnly /> : <BrandMark />}
+					<div className="relative flex h-16 items-center justify-between border-b border-white/10 px-3 transition-all duration-300">
+						<div className="flex items-center gap-2">
+							{sidebarCollapsed ? (
+								<BrandMark compact markOnly />
+							) : (
+								<BrandMark />
+							)}
+						</div>
 						<Button
 							variant="ghost"
 							size="icon"
 							onClick={() => setSidebarCollapsed((value) => !value)}
 							title={sidebarCollapsed ? "Expand panel" : "Collapse panel"}
-							className={`h-7 w-7 rounded-full text-muted-foreground transition-colors duration-200 hover:text-foreground ${
-								sidebarCollapsed
-									? ""
-									: "absolute right-2 top-1/2 -translate-y-1/2"
-							}`}
+							className="h-8 w-8 rounded-lg text-white/60 transition-all duration-300 hover:bg-white/10 hover:text-amber-400"
 						>
-							{sidebarCollapsed ? (
-								<ChevronRight className="h-3.5 w-3.5" />
-							) : (
-								<ChevronLeft className="h-3.5 w-3.5" />
-							)}
+							<motion.div
+								animate={{ rotate: sidebarCollapsed ? 180 : 0 }}
+								transition={{ duration: 0.3, ease: "easeInOut" }}
+							>
+								<ChevronLeft className="h-4 w-4" />
+							</motion.div>
 						</Button>
 					</div>
 					<nav className="space-y-1.5 px-3 pb-4 pt-3">
@@ -1430,17 +1764,17 @@ export default function Studio() {
 								<Link
 									key={item.key}
 									to={navHref(item.key)}
-									className={`group relative flex items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-sm transition-colors duration-200 ${
+									className={`group relative flex items-center gap-3 overflow-hidden rounded-xl py-2.5 text-sm transition-all duration-200 ${
 										isActive
-											? "border border-primary/25 bg-primary/10 text-foreground shadow-[0_14px_32px_-26px_rgba(245,158,11,0.55)]"
-											: "border border-transparent text-muted-foreground hover:border-border/60 hover:bg-secondary/50 hover:text-foreground"
-									}`}
+											? "border border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-transparent text-foreground shadow-[0_8px_24px_-12px_rgba(245,158,11,0.4)]"
+											: "border border-transparent text-muted-foreground hover:border-amber-500/20 hover:bg-gradient-to-r hover:from-amber-500/8 hover:to-transparent hover:text-foreground"
+									} ${sidebarCollapsed ? "justify-center px-2" : "px-3"}`}
 									title={sidebarCollapsed ? item.label : undefined}
 								>
 									{isActive ? (
 										<motion.span
 											layoutId="studio-sidebar-active"
-											className="absolute inset-0 rounded-xl bg-primary/12"
+											className="absolute inset-0 rounded-xl bg-gradient-to-r from-amber-500/20 to-transparent border border-amber-500/30 shadow-[0_0_20px_-5px_rgba(245,158,11,0.3)]"
 											transition={{
 												type: "spring",
 												stiffness: 380,
@@ -1448,13 +1782,21 @@ export default function Studio() {
 											}}
 										/>
 									) : null}
-									<Icon className="relative z-10 h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-105" />
+									<Icon
+										className={`relative z-10 h-5 w-5 shrink-0 transition-all duration-200 ${
+											isActive
+												? "text-amber-400"
+												: "text-white/50 group-hover:text-amber-400 group-hover:scale-110"
+										}`}
+									/>
 									{!sidebarCollapsed && (
 										<div className="relative z-10 min-w-0">
-											<p className="truncate font-medium leading-tight">
+											<p
+												className={`truncate font-medium leading-tight ${isActive ? "text-white" : "text-white/70"}`}
+											>
 												{item.label}
 											</p>
-											<p className="truncate text-[11px] leading-tight text-muted-foreground">
+											<p className="truncate text-[11px] leading-tight text-white/40">
 												{item.description}
 											</p>
 										</div>
@@ -1471,8 +1813,8 @@ export default function Studio() {
 							className="absolute inset-0 bg-black/40"
 							onClick={() => setMobileSidebarOpen(false)}
 						/>
-						<aside className="absolute left-0 top-0 h-full w-72 border-r border-border/70 bg-background p-3">
-							<div className="mb-2 flex h-12 items-center justify-between">
+						<aside className="absolute left-0 top-0 h-full w-72 border-r border-border/50 bg-gradient-to-b from-background via-background/98 to-amber-950/5 p-3">
+							<div className="mb-2 flex h-12 items-center justify-between border-b border-amber-500/20 pb-2">
 								<BrandMark />
 								<Button
 									variant="ghost"
@@ -1491,13 +1833,13 @@ export default function Studio() {
 											key={item.key}
 											to={navHref(item.key)}
 											onClick={() => setMobileSidebarOpen(false)}
-											className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm ${
+											className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 ${
 												isActive
-													? "bg-primary/12 text-foreground"
-													: "text-muted-foreground"
+													? "border border-amber-500/30 bg-gradient-to-r from-amber-500/15 to-transparent text-foreground"
+													: "text-muted-foreground hover:border-amber-500/20 hover:bg-gradient-to-r hover:from-amber-500/8 hover:to-transparent hover:text-foreground"
 											}`}
 										>
-											<Icon className="h-4 w-4" />
+											<Icon className="h-5 w-5 shrink-0" />
 											<div>
 												<p className="font-medium">{item.label}</p>
 												<p className="text-xs text-muted-foreground">

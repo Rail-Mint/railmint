@@ -1,10 +1,11 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { CheckCircle2, Sparkles, Wand2 } from "lucide-react";
+import { Bot, CheckCircle2, Sparkles, Wand2, X, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
-import { useAccount } from "wagmi";
+import { keccak256, toHex } from "viem";
+import { useAccount, useDisconnect } from "wagmi";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,11 +25,12 @@ import {
 	FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { XIcon } from "@/components/ui/x-icon";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useToast } from "@/hooks/use-toast";
+import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { supabase } from "@/integrations/supabase/client";
 
 const schema = z.object({
@@ -187,7 +189,23 @@ function buildCloneProfile(
 
 export default function Onboarding() {
 	const { address, isConnected } = useAccount();
+	const { disconnect, disconnectAsync } = useDisconnect();
+	const handleDisconnect = async () => {
+		try {
+			await disconnectAsync();
+		} catch {
+			disconnect();
+		}
+	};
 	const { toast } = useToast();
+	const {
+		registerCreator,
+		hash,
+		isPending,
+		isConfirming,
+		isSuccess,
+		error: web3Error,
+	} = useRegisterCreator();
 
 	const [step, setStep] = useState<OnboardingStep>(1);
 	const [loading, setLoading] = useState(false);
@@ -209,6 +227,8 @@ export default function Onboarding() {
 	const [manualOverride, setManualOverride] = useState(false);
 	const [, setAnalytics] = useState<OnboardingAnalytics>(defaultAnalytics);
 	const [awaitingWallet, setAwaitingWallet] = useState(false);
+	const [showCustomStyleForm, setShowCustomStyleForm] = useState(false);
+	const [web3TxHash, setWeb3TxHash] = useState<string | undefined>(undefined);
 
 	const viewedStepRef = useRef<Set<AnalyticsStep>>(new Set());
 	const currentStepRef = useRef<OnboardingStep>(1);
@@ -585,6 +605,38 @@ export default function Onboarding() {
 				? values.x_handle
 				: `@${values.x_handle}`;
 
+			// Generate profile hash from creator data
+			const profileData = JSON.stringify({
+				clone_name: values.clone_name,
+				persona_text: values.persona_text,
+				prompt_template: values.prompt_template,
+			});
+			const profileHash = keccak256(toHex(profileData));
+
+			// Attempt Web3 registration first
+			try {
+				await registerCreator(handle, profileHash);
+
+				// Show pending transaction state
+				toast({
+					title: "Transaction pending",
+					description: "Please confirm the transaction in your wallet...",
+				});
+
+				// Store transaction hash for display
+				if (hash) {
+					setWeb3TxHash(hash);
+				}
+			} catch (web3Err) {
+				console.error("Web3 registration failed:", web3Err);
+				toast({
+					title: "Blockchain registration failed",
+					description: "Falling back to database registration only.",
+					variant: "destructive",
+				});
+			}
+
+			// Always save to Supabase as fallback/backup
 			const { error } = await supabase.from("creators").upsert(
 				{
 					wallet_address: address,
@@ -607,7 +659,9 @@ export default function Onboarding() {
 			setStep(5);
 			toast({
 				title: "Clone created",
-				description: "Your AI clone is ready to generate content.",
+				description: web3TxHash
+					? `Your AI clone is ready. Transaction: ${web3TxHash.slice(0, 10)}...`
+					: "Your AI clone is ready to generate content.",
 			});
 		} catch (error: unknown) {
 			const description =
@@ -644,6 +698,43 @@ export default function Onboarding() {
 						Your clone <strong>{form.getValues("clone_name")}</strong> is ready.
 						Connect wallet login to save and unlock your studio.
 					</p>
+
+					{isPending && (
+						<div className="mx-auto mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-4 py-2 text-sm text-yellow-600">
+							⏳ Transaction pending - please confirm in your wallet...
+						</div>
+					)}
+
+					{isConfirming && (
+						<div className="mx-auto mt-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-sm text-blue-600">
+							⏳ Confirming transaction on blockchain...
+						</div>
+					)}
+
+					{isSuccess && web3TxHash && (
+						<div className="mx-auto mt-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-600">
+							✅ Blockchain registration successful!
+							<a
+								href={`https://testnet.bscscan.com/tx/${web3TxHash}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="ml-2 underline"
+							>
+								View transaction
+							</a>
+						</div>
+					)}
+
+					{web3Error && (
+						<div className="mx-auto mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-600">
+							⚠️ Web3 registration failed: {web3Error.message}
+							<br />
+							<span className="text-xs">
+								Falling back to database registration...
+							</span>
+						</div>
+					)}
+
 					<div className="mx-auto mt-4 flex max-w-xl flex-col items-center gap-2 text-sm">
 						{activationPerks.map((perk) => (
 							<p
@@ -682,6 +773,24 @@ export default function Onboarding() {
 						Your clone <strong>{form.getValues("clone_name")}</strong> is active
 						and synced to <strong>{shortAddress}</strong>.
 					</p>
+
+					{web3TxHash && (
+						<div className="mx-auto mb-4 max-w-2xl rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm">
+							<p className="font-semibold text-green-700">
+								✅ Registered on blockchain
+							</p>
+							<a
+								href={`https://testnet.bscscan.com/tx/${web3TxHash}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="mt-1 inline-block text-xs text-green-600 underline hover:text-green-700"
+							>
+								View transaction: {web3TxHash.slice(0, 10)}...
+								{web3TxHash.slice(-8)}
+							</a>
+						</div>
+					)}
+
 					<div className="mb-6 grid gap-2 rounded-2xl border border-border/70 bg-background/75 p-4 text-sm sm:grid-cols-3">
 						<p>Profile saved</p>
 						<p>Voice preset applied</p>
@@ -722,35 +831,88 @@ export default function Onboarding() {
 							</p>
 						</div>
 						<div className="rounded-2xl border border-border/70 bg-background/80 p-4">
-							<p className="text-sm font-semibold">Session status</p>
-							<p className="mt-1 text-sm text-muted-foreground">
-								{isConnected
-									? "Wallet connected. You can activate instantly after review."
-									: "Guest mode. Complete setup first, then login once to activate."}
-							</p>
+							<div className="flex flex-wrap items-start justify-between gap-3">
+								<div>
+									<p className="text-sm font-semibold">Session status</p>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{isConnected
+											? "Wallet connected. You can activate instantly after review."
+											: "Guest mode. Complete setup first, then login once to activate."}
+									</p>
+								</div>
+								{isConnected ? (
+									<button
+										type="button"
+										onClick={handleDisconnect}
+										className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-primary transition-colors hover:bg-primary/20"
+									>
+										Disconnect
+									</button>
+								) : null}
+							</div>
 							<div className="mt-3 flex items-center gap-2">
 								<Badge variant="outline">Step {Math.min(step, 4)} of 4</Badge>
 							</div>
 						</div>
 					</div>
-					<Progress value={progressValue} className="mt-5" />
-					<div className="mt-3 grid grid-cols-4 gap-2">
-						{progressCheckpoints.map((checkpoint) => {
-							const passed = step >= checkpoint.id;
-							return (
-								<div
-									key={checkpoint.id}
-									className={`rounded-lg border px-2 py-1.5 text-center text-[11px] font-medium ${
-										passed
-											? "border-primary/40 bg-primary/10 text-primary"
-											: "border-border/70 bg-background/70 text-muted-foreground"
-									}`}
-								>
-									{passed ? "✓ " : ""}
-									{checkpoint.label}
-								</div>
-							);
-						})}
+					<div className="mt-6 flex items-center justify-between">
+						<div className="flex w-full items-center">
+							{progressCheckpoints.map((checkpoint, index) => {
+								const isActive = step === checkpoint.id;
+								const isCompleted = step > checkpoint.id;
+								return (
+									<div key={checkpoint.id} className="flex flex-1 items-center">
+										<div className="flex flex-col items-center">
+											<div
+												className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-all duration-300 ${
+													isCompleted
+														? "bg-primary text-primary-foreground"
+														: isActive
+															? "border-2 border-primary bg-primary/10 text-primary"
+															: "border-2 border-muted-foreground/30 bg-background text-muted-foreground"
+												}`}
+											>
+												{isCompleted ? (
+													<svg
+														className="h-4 w-4"
+														fill="none"
+														viewBox="0 0 24 24"
+														stroke="currentColor"
+													>
+														<path
+															strokeLinecap="round"
+															strokeLinejoin="round"
+															strokeWidth={3}
+															d="M5 13l4 4L19 7"
+														/>
+													</svg>
+												) : (
+													checkpoint.id
+												)}
+											</div>
+											<span
+												className={`mt-2 text-xs font-medium ${
+													isActive
+														? "text-primary"
+														: isCompleted
+															? "text-foreground"
+															: "text-muted-foreground"
+												}`}
+											>
+												{checkpoint.label}
+											</span>
+										</div>
+										{index < progressCheckpoints.length - 1 && (
+											<div
+												className={`mx-2 h-0.5 flex-1 rounded-full transition-colors duration-300 ${
+													isCompleted ? "bg-primary" : "bg-muted-foreground/20"
+												}`}
+											/>
+										)}
+									</div>
+								);
+							})}
+						</div>
 					</div>
 				</div>
 
@@ -763,12 +925,17 @@ export default function Onboarding() {
 					>
 						{step === 1 ? (
 							<Card className="border-border/70 bg-background/80 shadow-sm">
-								<CardHeader>
-									<CardTitle>Fast Setup</CardTitle>
-									<CardDescription>
-										Set your public identity, pick a preset, and move to
-										preview.
-									</CardDescription>
+								<CardHeader className="flex flex-row items-center gap-3">
+									<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+										<Zap className="h-5 w-5 text-primary" />
+									</div>
+									<div>
+										<CardTitle>Fast Setup</CardTitle>
+										<CardDescription>
+											Set your public identity, pick a preset, and move to
+											preview.
+										</CardDescription>
+									</div>
 								</CardHeader>
 								<CardContent className="space-y-4">
 									<div className="grid gap-4 sm:grid-cols-2">
@@ -777,9 +944,15 @@ export default function Onboarding() {
 											name="x_handle"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>X Handle</FormLabel>
+													<FormLabel className="flex items-center gap-2">
+														<XIcon className="h-4 w-4" />X Handle
+													</FormLabel>
 													<FormControl>
-														<Input placeholder="@yourhandle" {...field} />
+														<Input
+															placeholder="@yourhandle"
+															className="h-10"
+															{...field}
+														/>
 													</FormControl>
 													<FormMessage />
 												</FormItem>
@@ -790,10 +963,14 @@ export default function Onboarding() {
 											name="clone_name"
 											render={({ field }) => (
 												<FormItem>
-													<FormLabel>Clone Name</FormLabel>
+													<FormLabel className="flex items-center gap-2">
+														<Bot className="h-4 w-4" />
+														Clone Name
+													</FormLabel>
 													<FormControl>
 														<Input
 															placeholder="RailMint Strategist"
+															className="h-10"
 															{...field}
 														/>
 													</FormControl>
@@ -816,7 +993,7 @@ export default function Onboarding() {
 											Choose one now. You can tune details in Voice Builder.
 										</p>
 										<div className="grid gap-2 sm:grid-cols-3">
-											{starterPacks.map((pack) => (
+											{allStarterPacks.map((pack) => (
 												<button
 													key={pack.id}
 													type="button"
@@ -840,7 +1017,65 @@ export default function Onboarding() {
 													</p>
 												</button>
 											))}
+
+											<button
+												type="button"
+												onClick={() => {
+													setSelectedPack("");
+													setShowCustomStyleForm(true);
+												}}
+												className={`rounded-xl border-2 border-dashed px-3 py-2 text-left transition-colors ${
+													showCustomStyleForm
+														? "border-primary bg-primary/10"
+														: "border-border/70 bg-background/70 hover:border-primary/50"
+												}`}
+											>
+												<p className="text-sm font-semibold text-primary">
+													+ Create Custom
+												</p>
+												<p className="text-xs text-muted-foreground">
+													Design your own style
+												</p>
+											</button>
 										</div>
+
+										{showCustomStyleForm && (
+											<div className="mt-4 rounded-xl border border-primary/30 bg-primary/5 p-4">
+												<p className="mb-3 text-sm font-medium">
+													Create Your Custom Style
+												</p>
+												<div className="space-y-3">
+													<input
+														type="text"
+														placeholder="Style name (e.g., DeFi Alpha)"
+														className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+														value={customPackName}
+														onChange={(e) => setCustomPackName(e.target.value)}
+													/>
+													<div className="flex gap-2">
+														<Button
+															size="sm"
+															onClick={() => {
+																saveCustomStarterPack();
+																setShowCustomStyleForm(false);
+															}}
+														>
+															Create Style
+														</Button>
+														<Button
+															size="sm"
+															variant="outline"
+															onClick={() => {
+																setShowCustomStyleForm(false);
+																setCustomPackName("");
+															}}
+														>
+															Cancel
+														</Button>
+													</div>
+												</div>
+											</div>
+										)}
 									</div>
 
 									<div className="rounded-xl border border-border/70 bg-background/70 p-3">
@@ -913,11 +1148,6 @@ export default function Onboarding() {
 												them here.
 											</p>
 										</div>
-									</div>
-
-									<div className="rounded-xl border border-border/70 bg-background/70 p-3 text-sm text-muted-foreground">
-										One-click packs keep setup fast. You can refine everything
-										in the next step.
 									</div>
 								</CardContent>
 							</Card>

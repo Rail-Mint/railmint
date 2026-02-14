@@ -31,6 +31,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useHasUserLiked, useLikeContent } from "@/hooks/useContentManager";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Post {
@@ -69,6 +70,14 @@ const cardReveal = {
 export default function Feed() {
 	const { address } = useAccount();
 	const { toast } = useToast();
+	const {
+		likeContent,
+		isPending,
+		isConfirming,
+		isSuccess,
+		hash,
+		error: likeError,
+	} = useLikeContent();
 
 	const [posts, setPosts] = useState<Post[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -82,10 +91,73 @@ export default function Feed() {
 		{},
 	);
 	const [generating, setGenerating] = useState(false);
+	const [likingPostId, setLikingPostId] = useState<string | null>(null);
 
 	useEffect(() => {
 		void loadData();
 	}, [address, epochFilter, page]);
+
+	useEffect(() => {
+		if (isPending && likingPostId) {
+			toast({
+				title: "Transaction pending",
+				description: "Please confirm the transaction in your wallet...",
+			});
+		}
+	}, [isPending, likingPostId, toast]);
+
+	useEffect(() => {
+		if (isConfirming && likingPostId) {
+			toast({
+				title: "Confirming transaction",
+				description: "Waiting for blockchain confirmation...",
+			});
+		}
+	}, [isConfirming, likingPostId, toast]);
+
+	useEffect(() => {
+		if (isSuccess && hash && likingPostId) {
+			toast({
+				title: "Like successful!",
+				description: (
+					<div className="flex flex-col gap-1">
+						<p>Your like has been recorded on the blockchain.</p>
+						<a
+							href={`https://opbnb-testnet.bscscan.com/tx/${hash}`}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="text-primary underline hover:text-primary/80"
+						>
+							View Transaction: {hash.slice(0, 10)}...{hash.slice(-8)}
+						</a>
+					</div>
+				),
+			});
+			setPosts((prev) =>
+				prev.map((post) =>
+					post.id === likingPostId
+						? {
+								...post,
+								liked_by_me: true,
+								like_count: post.like_count + 1,
+							}
+						: post,
+				),
+			);
+			setLikingPostId(null);
+		}
+	}, [isSuccess, hash, likingPostId, toast]);
+
+	useEffect(() => {
+		if (likeError) {
+			toast({
+				title: "Like failed",
+				description: likeError.message || "Failed to like content",
+				variant: "destructive",
+			});
+			setLikingPostId(null);
+		}
+	}, [likeError, toast]);
 
 	async function loadData() {
 		setLoading(true);
@@ -160,35 +232,61 @@ export default function Feed() {
 			return;
 		}
 
+		if (isPending || isConfirming) {
+			toast({
+				title: "Transaction in progress",
+				description: "Please wait for the current transaction to complete.",
+				variant: "default",
+			});
+			return;
+		}
+
 		if (liked) {
+			// Unlike - only remove from Supabase (no blockchain unlike)
 			await supabase
 				.from("likes")
 				.delete()
 				.eq("post_id", postId)
 				.eq("wallet_address", address);
+
+			setPosts((prev) =>
+				prev.map((post) =>
+					post.id === postId
+						? {
+								...post,
+								liked_by_me: false,
+								like_count: Math.max(0, post.like_count - 1),
+							}
+						: post,
+				),
+			);
 		} else {
-			const { error } = await supabase
-				.from("likes")
-				.insert({ post_id: postId, wallet_address: address });
-			if (error) {
-				toast({ title: "Already liked", variant: "destructive" });
-				return;
+			// Like - Web3 transaction + Supabase fallback
+			try {
+				const post = posts.find((p) => p.id === postId);
+				if (!post) return;
+
+				setLikingPostId(postId);
+
+				// Call Web3 like transaction
+				const contentIdBigInt = BigInt(post.id);
+				likeContent(contentIdBigInt);
+
+				// Supabase fallback for immediate UI update
+				await supabase
+					.from("likes")
+					.insert({ post_id: postId, wallet_address: address });
+			} catch (error: unknown) {
+				const errorMessage =
+					error instanceof Error ? error.message : "Failed to like content";
+				toast({
+					title: "Like failed",
+					description: errorMessage,
+					variant: "destructive",
+				});
+				setLikingPostId(null);
 			}
 		}
-
-		setPosts((prev) =>
-			prev.map((post) =>
-				post.id === postId
-					? {
-							...post,
-							liked_by_me: !liked,
-							like_count: liked
-								? Math.max(0, post.like_count - 1)
-								: post.like_count + 1,
-						}
-					: post,
-			),
-		);
 	}
 
 	async function handleGeneratePost() {
@@ -207,13 +305,18 @@ export default function Feed() {
 			});
 			if (error) throw error;
 			if (data?.error) throw new Error(data.error);
-			toast({ title: "Post generated!", description: "Your AI post is now live in the feed." });
+			toast({
+				title: "Post generated!",
+				description: "Your AI post is now live in the feed.",
+			});
 			setPage(1);
 			await loadData();
-		} catch (err: any) {
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Could not generate post.";
 			toast({
 				title: "Generation failed",
-				description: err?.message || "Could not generate post.",
+				description: errorMessage,
 				variant: "destructive",
 			});
 		} finally {
@@ -270,7 +373,11 @@ export default function Feed() {
 								className="mt-3 gap-2"
 								size="sm"
 							>
-								{generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+								{generating ? (
+									<Loader2 className="h-4 w-4 animate-spin" />
+								) : (
+									<Wand2 className="h-4 w-4" />
+								)}
 								{generating ? "Generating…" : "Generate Post"}
 							</Button>
 						)}
@@ -425,10 +532,19 @@ export default function Feed() {
 														onClick={() =>
 															toggleLike(post.id, post.liked_by_me)
 														}
+														disabled={
+															(isPending || isConfirming) &&
+															likingPostId === post.id
+														}
 													>
-														<Heart
-															className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
-														/>
+														{(isPending || isConfirming) &&
+														likingPostId === post.id ? (
+															<Loader2 className="mr-1 h-4 w-4 animate-spin" />
+														) : (
+															<Heart
+																className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
+															/>
+														)}
 														{post.like_count}
 													</Button>
 													{post.like_count >= 10 ? (

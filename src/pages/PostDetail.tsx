@@ -12,6 +12,7 @@ import {
 	Share2,
 	Shield,
 	Sparkles,
+	X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -26,6 +27,7 @@ import {
 	PopoverTrigger,
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { XIcon } from "@/components/ui/x-icon";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -695,7 +697,7 @@ export default function PostDetail() {
 									onClick={shareToX}
 									className="border-primary/30"
 								>
-									<Share2 className="mr-1 h-4 w-4" /> Share to X
+									<XIcon className="mr-1 h-4 w-4" />
 								</Button>
 							</div>
 						</CardContent>

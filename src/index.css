@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -117,7 +118,7 @@
       radial-gradient(circle at 90% 8%, hsl(36 97% 54% / 0.1), transparent 42%),
       linear-gradient(180deg, hsl(var(--background)), hsl(220 40% 98%));
     background-attachment: fixed;
-    font-family: 'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif;
+    font-family: 'Space Grotesk', 'DM Sans', 'Avenir Next', 'Segoe UI', sans-serif;
     text-rendering: optimizeLegibility;
     overflow-x: hidden;
     transition: background-color 280ms ease, color 220ms ease;

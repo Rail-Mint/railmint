@@ -1,5 +1,5 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -156,7 +156,7 @@ serve(async (req) => {
 						Authorization: `Bearer ${OPENROUTER_API_KEY}`,
 						"Content-Type": "application/json",
 						"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
-				"X-Title": "RailMintAI",
+						"X-Title": "RailMintAI",
 					},
 					body: JSON.stringify({
 						model: modelVersion,

@@ -14,7 +14,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useDisconnect } from "wagmi";
+import { useAccount, useDisconnect } from "wagmi";
 import { buttonVariants } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -38,7 +38,20 @@ export function ConnectWalletButton({
 	compact = false,
 }: ConnectWalletButtonProps) {
 	const { toast } = useToast();
-	const { disconnect } = useDisconnect();
+	const { disconnect, disconnectAsync } = useDisconnect();
+	const { connector } = useAccount();
+
+	const handleDisconnect = async () => {
+		try {
+			if (connector) {
+				await disconnectAsync({ connector });
+				return;
+			}
+			await disconnectAsync();
+		} catch {
+			disconnect();
+		}
+	};
 
 	const copyAddress = async (address?: string) => {
 		if (!address) return;
@@ -284,7 +297,7 @@ export function ConnectWalletButton({
 
 									<button
 										type="button"
-										onClick={() => disconnect()}
+										onClick={handleDisconnect}
 										className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive transition-all duration-200 hover:-translate-y-0.5 hover:border-destructive/65 hover:bg-destructive/30 hover:text-destructive"
 									>
 										<LogOut className="h-4 w-4" />

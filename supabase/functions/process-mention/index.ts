@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
 	isAddress,
@@ -6,6 +5,7 @@ import {
 	parseEther,
 	Wallet,
 } from "https://esm.sh/ethers@6.13.4";
+import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
 
 // Use `any` to avoid strict type checking for tables not in generated types
 type SupabaseAny = ReturnType<typeof createClient>;
@@ -194,11 +194,13 @@ function isInternalServiceCall(req: Request): boolean {
 	return authToken === serviceRoleKey || apikey === serviceRoleKey;
 }
 
-async function verifyWebhookSignature(params: {
+interface VerifyWebhookParams {
 	req: Request;
 	rawBody: string;
-	supabase: any;
-}) {
+	supabase: ReturnType<typeof createClient>;
+}
+
+async function verifyWebhookSignature(params: VerifyWebhookParams) {
 	const secret = Deno.env.get("X_WEBHOOK_SECRET");
 	if (!secret) return;
 
@@ -257,7 +259,7 @@ async function verifyWebhookSignature(params: {
 }
 
 async function fetchCreatorByHandle(
-	supabase: any,
+	supabase: ReturnType<typeof createClient>,
 	xHandle?: string | null,
 ) {
 	const normalizedHandle = normalizeHandle(xHandle);
@@ -270,7 +272,7 @@ async function fetchCreatorByHandle(
 	return data;
 }
 
-async function fetchOpenEpoch(supabase: any) {
+async function fetchOpenEpoch(supabase: ReturnType<typeof createClient>) {
 	const { data } = await supabase
 		.from("epochs")
 		.select("id, reward_pool")
@@ -281,14 +283,16 @@ async function fetchOpenEpoch(supabase: any) {
 	return data;
 }
 
-async function createPostFromMention(params: {
-	supabase: any;
+interface CreatePostParams {
+	supabase: ReturnType<typeof createClient>;
 	creatorId: string;
 	creatorWallet: string;
 	epochId: number;
 	contentText: string;
 	sourceReference: string;
-}) {
+}
+
+async function createPostFromMention(params: CreatePostParams) {
 	const createdAt = new Date().toISOString();
 	const postId = crypto.randomUUID();
 	const promptText = `X mention publish command ${params.sourceReference}`;
@@ -362,7 +366,7 @@ async function executeDonationTransfer(
 }
 
 async function buildAskResponse(
-	supabase: any,
+	supabase: ReturnType<typeof createClient>,
 	question: string,
 ) {
 	const mentionedHandle = question.match(/@[a-z0-9_]+/i)?.[0];
@@ -761,7 +765,9 @@ serve(async (req) => {
 					})
 					.eq("mention_id", mentionIdForFailure);
 			}
-		} catch (_ignored) {}
+		} catch (error) {
+			console.error("Failed to mark mention as failed:", error);
+		}
 
 		return new Response(
 			JSON.stringify({
