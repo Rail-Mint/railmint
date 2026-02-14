@@ -19,6 +19,7 @@ export type Database = {
           clone_name: string
           created_at: string
           id: string
+          is_active: boolean
           persona_text: string
           prompt_template: string
           updated_at: string
@@ -31,6 +32,7 @@ export type Database = {
           clone_name: string
           created_at?: string
           id?: string
+          is_active?: boolean
           persona_text: string
           prompt_template: string
           updated_at?: string
@@ -43,6 +45,7 @@ export type Database = {
           clone_name?: string
           created_at?: string
           id?: string
+          is_active?: boolean
           persona_text?: string
           prompt_template?: string
           updated_at?: string

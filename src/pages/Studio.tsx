@@ -174,6 +174,8 @@ export default function Studio() {
           <StudioSettings
             densityCompact={densityCompact}
             onDensityChange={setDensityCompact}
+            profile={profile}
+            onProfileUpdate={refetch}
           />
         );
       default:
