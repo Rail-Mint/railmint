@@ -10,6 +10,7 @@ export type CreatorProfile = {
   wallet_address: string;
   x_verified: boolean;
   x_verified_at: string | null;
+  is_active: boolean;
 } | null;
 
 export type PostPreview = {
@@ -95,12 +96,12 @@ export function useStudioData(address: string | undefined) {
       ]);
 
       const creator = creatorResult.data;
-      // Manually add x_verified fields since types haven't regenerated yet
       const creatorWithVerification = creator
         ? {
             ...creator,
             x_verified: (creator as any).x_verified ?? false,
             x_verified_at: (creator as any).x_verified_at ?? null,
+            is_active: (creator as any).is_active ?? true,
           }
         : null;
       setProfile(creatorWithVerification);

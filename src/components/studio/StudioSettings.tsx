@@ -1,16 +1,61 @@
+import { useState } from "react";
 import { AlertTriangle, Bell, Moon, Settings, Sparkles, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
+import type { CreatorProfile } from "@/hooks/useStudioData";
 
 interface Props {
   densityCompact: boolean;
   onDensityChange: (v: boolean) => void;
+  profile: CreatorProfile;
+  onProfileUpdate?: () => void;
 }
 
-export function StudioSettings({ densityCompact, onDensityChange }: Props) {
+export function StudioSettings({ densityCompact, onDensityChange, profile, onProfileUpdate }: Props) {
   const { theme, setTheme } = useTheme();
+  const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+
+  const isActive = profile?.is_active ?? true;
+
+  const handleToggleActive = async () => {
+    if (!profile?.id) return;
+    setDeactivating(true);
+    try {
+      const newStatus = !isActive;
+      const { error } = await supabase
+        .from("creators")
+        .update({ is_active: newStatus } as any)
+        .eq("id", profile.id);
+      if (error) throw error;
+      toast({
+        title: newStatus ? "Clone Reactivated" : "Clone Deactivated",
+        description: newStatus
+          ? "Your AI clone is now active and will generate content."
+          : "Your AI clone has been deactivated and will no longer generate content.",
+      });
+      onProfileUpdate?.();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeactivating(false);
+      setShowDeactivateDialog(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -99,17 +144,63 @@ export function StudioSettings({ densityCompact, onDensityChange }: Props) {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between rounded-xl border border-destructive/20 bg-destructive/5 p-4">
             <div>
-              <p className="text-sm font-medium">Deactivate Clone</p>
+              <p className="text-sm font-medium">
+                {isActive ? "Deactivate Clone" : "Reactivate Clone"}
+              </p>
               <p className="text-xs text-muted-foreground">
-                Temporarily disable your AI clone from generating content
+                {isActive
+                  ? "Temporarily disable your AI clone from generating content"
+                  : "Your clone is currently deactivated — reactivate to resume content generation"}
               </p>
             </div>
-            <Button variant="outline" size="sm" className="border-destructive/30 text-destructive hover:bg-destructive/10">
-              Deactivate
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={deactivating}
+              className={
+                isActive
+                  ? "border-destructive/30 text-destructive hover:bg-destructive/10"
+                  : "border-primary/30 text-primary hover:bg-primary/10"
+              }
+              onClick={() => {
+                if (isActive) {
+                  setShowDeactivateDialog(true);
+                } else {
+                  handleToggleActive();
+                }
+              }}
+            >
+              {deactivating ? "Processing…" : isActive ? "Deactivate" : "Reactivate"}
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Deactivate confirmation dialog */}
+      <AlertDialog open={showDeactivateDialog} onOpenChange={setShowDeactivateDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate your AI clone?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your clone will stop generating new content and won't participate in future epochs.
+              You can reactivate it at any time from Settings.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deactivating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deactivating}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                handleToggleActive();
+              }}
+            >
+              {deactivating ? "Deactivating…" : "Yes, deactivate"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
