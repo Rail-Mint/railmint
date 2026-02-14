@@ -36,6 +36,7 @@ import { supabase } from "@/integrations/supabase/client";
 interface Post {
 	id: string;
 	content_text: string;
+	content_html: string | null;
 	prompt_hash: string;
 	content_hash: string;
 	commit_tx_hash: string | null;
@@ -127,9 +128,23 @@ export default function Feed() {
 			likes = likesRes.data || [];
 		}
 
-		const enriched: Post[] = postsData.map((post) => ({
+		const enriched: Post[] = (
+			(postsData as unknown as Array<{
+				id: string;
+				content_text: string;
+				content_html: string | null;
+				prompt_hash: string;
+				content_hash: string;
+				commit_tx_hash: string | null;
+				is_fallback: boolean;
+				created_at: string;
+				epoch_id: number;
+				creator: Post["creator"];
+			}>) || []
+		).map((post) => ({
 			id: post.id,
 			content_text: post.content_text,
+			content_html: post.content_html || null,
 			prompt_hash: post.prompt_hash,
 			content_hash: post.content_hash,
 			commit_tx_hash: post.commit_tx_hash,
@@ -203,40 +218,40 @@ export default function Feed() {
 				),
 			);
 		} else {
-		// Like - Supabase primary, on-chain secondary (if deployed)
-		try {
-			const post = posts.find((p) => p.id === postId);
-			if (!post) return;
+			// Like - Supabase primary, on-chain secondary (if deployed)
+			try {
+				const post = posts.find((p) => p.id === postId);
+				if (!post) return;
 
-			setLikingPostId(postId);
+				setLikingPostId(postId);
 
-			// Supabase is the primary data store
-			await supabase
-				.from("likes")
-				.insert({ post_id: postId, wallet_address: address });
+				// Supabase is the primary data store
+				await supabase
+					.from("likes")
+					.insert({ post_id: postId, wallet_address: address });
 
-			// On-chain like only if contracts are deployed (UUID cannot be BigInt)
-			// Skip on-chain call -- contract addresses are not configured yet
-			// When deployed, a numeric content ID mapping will be needed
+				// On-chain like only if contracts are deployed (UUID cannot be BigInt)
+				// Skip on-chain call -- contract addresses are not configured yet
+				// When deployed, a numeric content ID mapping will be needed
 
-			setPosts((prev) =>
-				prev.map((p) =>
-					p.id === postId
-						? { ...p, liked_by_me: true, like_count: p.like_count + 1 }
-						: p,
-				),
-			);
-			setLikingPostId(null);
-		} catch (error: unknown) {
-			const errorMessage =
-				error instanceof Error ? error.message : "Failed to like content";
-			toast({
-				title: "Like failed",
-				description: errorMessage,
-				variant: "destructive",
-			});
-			setLikingPostId(null);
-		}
+				setPosts((prev) =>
+					prev.map((p) =>
+						p.id === postId
+							? { ...p, liked_by_me: true, like_count: p.like_count + 1 }
+							: p,
+					),
+				);
+				setLikingPostId(null);
+			} catch (error: unknown) {
+				const errorMessage =
+					error instanceof Error ? error.message : "Failed to like content";
+				toast({
+					title: "Like failed",
+					description: errorMessage,
+					variant: "destructive",
+				});
+				setLikingPostId(null);
+			}
 		}
 	}
 
@@ -290,13 +305,11 @@ export default function Feed() {
 							Discover AI-generated BNB ecosystem posts, sort by momentum, and
 							reward the clones producing standout content.
 						</p>
-						<Button
-							onClick={handleCreatePost}
-							className="mt-3 gap-2"
-							size="sm"
-						>
+						<Button onClick={handleCreatePost} className="mt-3 gap-2" size="sm">
 							<Wand2 className="h-4 w-4" />
-							{address && hasCreatorProfile ? "Generate Post" : "Start Creating"}
+							{address && hasCreatorProfile
+								? "Generate Post"
+								: "Start Creating"}
 						</Button>
 					</div>
 
@@ -449,15 +462,15 @@ export default function Feed() {
 														onClick={() =>
 															toggleLike(post.id, post.liked_by_me)
 														}
-													disabled={likingPostId === post.id}
-												>
-													{likingPostId === post.id ? (
-														<Loader2 className="mr-1 h-4 w-4 animate-spin" />
-													) : (
-														<Heart
-															className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
-														/>
-													)}
+														disabled={likingPostId === post.id}
+													>
+														{likingPostId === post.id ? (
+															<Loader2 className="mr-1 h-4 w-4 animate-spin" />
+														) : (
+															<Heart
+																className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
+															/>
+														)}
 														{post.like_count}
 													</Button>
 													{post.like_count >= 10 ? (

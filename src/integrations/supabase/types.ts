@@ -1,3 +1,4 @@
+Connecting to db 5432
 export type Json =
   | string
   | number
@@ -7,52 +8,50 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "14.1"
-  }
   public: {
     Tables: {
       creators: {
         Row: {
           clone_name: string
           created_at: string
+          focus_id: string | null
+          goal_id: string | null
           id: string
-          is_active: boolean
           persona_text: string
           prompt_template: string
+          selected_pack: string | null
+          tone_id: string | null
           updated_at: string
           wallet_address: string
           x_handle: string | null
-          x_verified: boolean
-          x_verified_at: string | null
         }
         Insert: {
           clone_name: string
           created_at?: string
+          focus_id?: string | null
+          goal_id?: string | null
           id?: string
-          is_active?: boolean
           persona_text: string
           prompt_template: string
+          selected_pack?: string | null
+          tone_id?: string | null
           updated_at?: string
           wallet_address: string
           x_handle?: string | null
-          x_verified?: boolean
-          x_verified_at?: string | null
         }
         Update: {
           clone_name?: string
           created_at?: string
+          focus_id?: string | null
+          goal_id?: string | null
           id?: string
-          is_active?: boolean
           persona_text?: string
           prompt_template?: string
+          selected_pack?: string | null
+          tone_id?: string | null
           updated_at?: string
           wallet_address?: string
           x_handle?: string | null
-          x_verified?: boolean
-          x_verified_at?: string | null
         }
         Relationships: []
       }
@@ -62,8 +61,8 @@ export type Database = {
           donation_id: string | null
           error_text: string | null
           event_type: string
-          id: string
-          metadata: Json | null
+          id: number
+          metadata: Json
           tx_hash: string | null
         }
         Insert: {
@@ -71,8 +70,8 @@ export type Database = {
           donation_id?: string | null
           error_text?: string | null
           event_type: string
-          id?: string
-          metadata?: Json | null
+          id?: number
+          metadata?: Json
           tx_hash?: string | null
         }
         Update: {
@@ -80,8 +79,8 @@ export type Database = {
           donation_id?: string | null
           error_text?: string | null
           event_type?: string
-          id?: string
-          metadata?: Json | null
+          id?: number
+          metadata?: Json
           tx_hash?: string | null
         }
         Relationships: [
@@ -108,6 +107,7 @@ export type Database = {
           recipient_wallet: string
           status: string
           tx_hash: string | null
+          updated_at: string
         }
         Insert: {
           amount: number
@@ -122,6 +122,7 @@ export type Database = {
           recipient_wallet: string
           status?: string
           tx_hash?: string | null
+          updated_at?: string
         }
         Update: {
           amount?: number
@@ -136,6 +137,7 @@ export type Database = {
           recipient_wallet?: string
           status?: string
           tx_hash?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -156,26 +158,35 @@ export type Database = {
       }
       epoch_rewards: {
         Row: {
+          composite_score: number
           creator_id: string
           epoch_id: number
           id: string
           like_count: number
+          moderation_score: number
+          quality_score: number
           rank: number
           reward_amount: number
         }
         Insert: {
+          composite_score?: number
           creator_id: string
           epoch_id: number
           id?: string
           like_count: number
+          moderation_score?: number
+          quality_score?: number
           rank: number
           reward_amount: number
         }
         Update: {
+          composite_score?: number
           creator_id?: string
           epoch_id?: number
           id?: string
           like_count?: number
+          moderation_score?: number
+          quality_score?: number
           rank?: number
           reward_amount?: number
         }
@@ -266,7 +277,7 @@ export type Database = {
           last_attempt_at: string | null
           mention_id: string
           parsed_intent: string
-          payload: Json | null
+          payload: Json
           platform: string
           processed_at: string | null
           raw_text: string
@@ -282,7 +293,7 @@ export type Database = {
           last_attempt_at?: string | null
           mention_id: string
           parsed_intent?: string
-          payload?: Json | null
+          payload?: Json
           platform?: string
           processed_at?: string | null
           raw_text: string
@@ -298,7 +309,7 @@ export type Database = {
           last_attempt_at?: string | null
           mention_id?: string
           parsed_intent?: string
-          payload?: Json | null
+          payload?: Json
           platform?: string
           processed_at?: string | null
           raw_text?: string
@@ -309,42 +320,72 @@ export type Database = {
       posts: {
         Row: {
           commit_tx_hash: string | null
+          composite_score: number
           content_hash: string
+          content_html: string | null
+          content_tags: string[]
           content_text: string
           created_at: string
           creator_id: string
+          engagement_score: number
           epoch_id: number
           id: string
           is_fallback: boolean
           meta_hash: string
+          moderation_score: number
           prompt_hash: string
           prompt_text: string
+          quality_flags: Json
+          quality_score: number
+          risk_level: string
+          source_platform: string
+          source_reference: string | null
         }
         Insert: {
           commit_tx_hash?: string | null
+          composite_score?: number
           content_hash: string
+          content_html?: string | null
+          content_tags?: string[]
           content_text: string
           created_at?: string
           creator_id: string
+          engagement_score?: number
           epoch_id: number
           id?: string
           is_fallback?: boolean
           meta_hash: string
+          moderation_score?: number
           prompt_hash: string
           prompt_text: string
+          quality_flags?: Json
+          quality_score?: number
+          risk_level?: string
+          source_platform?: string
+          source_reference?: string | null
         }
         Update: {
           commit_tx_hash?: string | null
+          composite_score?: number
           content_hash?: string
+          content_html?: string | null
+          content_tags?: string[]
           content_text?: string
           created_at?: string
           creator_id?: string
+          engagement_score?: number
           epoch_id?: number
           id?: string
           is_fallback?: boolean
           meta_hash?: string
+          moderation_score?: number
           prompt_hash?: string
           prompt_text?: string
+          quality_flags?: Json
+          quality_score?: number
+          risk_level?: string
+          source_platform?: string
+          source_reference?: string | null
         }
         Relationships: [
           {
@@ -383,14 +424,17 @@ export type Database = {
       }
       webhook_nonces: {
         Row: {
+          created_at: string
           expires_at: string
           nonce: string
         }
         Insert: {
+          created_at?: string
           expires_at: string
           nonce: string
         }
         Update: {
+          created_at?: string
           expires_at?: string
           nonce?: string
         }
@@ -542,3 +586,4 @@ export const Constants = {
     },
   },
 } as const
+

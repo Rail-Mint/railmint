@@ -101,25 +101,6 @@ export function ConnectWalletButton({
 					);
 				}
 
-				if (chain.unsupported) {
-					return (
-						<button
-							type="button"
-							onClick={openChainModal}
-							className={cn(
-								buttonVariants({
-									variant: "destructive",
-									size: compact ? "sm" : "default",
-								}),
-								"rounded-xl",
-								className,
-							)}
-						>
-							Wrong network
-						</button>
-					);
-				}
-
 				const nativeSymbol = normalizeTokenUnit(
 					(
 						chain as {
@@ -217,13 +198,9 @@ export function ConnectWalletButton({
 									</div>
 
 									<div className="mt-2 flex items-center justify-between text-xs">
-										<button
-											type="button"
-											onClick={openChainModal}
-											className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary transition-colors hover:bg-primary/15"
-										>
-											{chain.name}
-										</button>
+										<span className="rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary">
+											BSC Testnet
+										</span>
 										<span className="inline-flex items-center gap-1 font-medium text-muted-foreground">
 											<Zap className="h-3.5 w-3.5 text-primary" />
 											{displayBalance}

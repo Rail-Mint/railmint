@@ -3,8 +3,8 @@ import { useAccount, useChainId } from "wagmi";
 import { BrandMark } from "@/components/branding/BrandMark";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import {
-	CREATOR_REGISTRY_ADDRESS,
 	CONTENT_MANAGER_ADDRESS,
+	CREATOR_REGISTRY_ADDRESS,
 	REWARD_DISTRIBUTOR_ADDRESS,
 } from "@/lib/contracts";
 
@@ -28,14 +28,14 @@ export function Footer() {
 			<div className="container flex flex-col items-center justify-between gap-4 py-8 text-center text-sm text-muted-foreground md:flex-row md:text-left">
 				<BrandMark showTagline className="justify-center md:justify-start" />
 
-				<div className="flex flex-wrap items-center gap-4 text-xs">
+				<p>RailMintAI · Built on BNB Chain</p>
+
+				<div className="flex flex-wrap items-center justify-end gap-4 text-xs">
 					{/* Wallet / chain */}
 					<span className="flex items-center gap-1.5">
 						<Circle
 							className={`h-2 w-2 fill-current ${
-								isConnected
-									? "text-emerald-500"
-									: "text-muted-foreground/50"
+								isConnected ? "text-emerald-500" : "text-muted-foreground/50"
 							}`}
 						/>
 						{isConnected ? chainName : "Wallet disconnected"}
@@ -47,9 +47,7 @@ export function Footer() {
 					<span className="flex items-center gap-1.5">
 						<Circle
 							className={`h-2 w-2 fill-current ${
-								mode === "live"
-									? "text-emerald-500"
-									: "text-amber-500"
+								mode === "live" ? "text-emerald-500" : "text-amber-500"
 							}`}
 						/>
 						{networkLabel}
@@ -71,8 +69,6 @@ export function Footer() {
 						</span>
 					)}
 				</div>
-
-				<p>RailMintAI · Built on BNB Chain</p>
 			</div>
 		</footer>
 	);

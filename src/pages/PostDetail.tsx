@@ -49,6 +49,7 @@ interface PostDetailData {
 	id: string;
 	prompt_text: string;
 	content_text: string;
+	content_html: string | null;
 	prompt_hash: string;
 	content_hash: string;
 	meta_hash: string;
@@ -915,7 +916,10 @@ export default function PostDetail() {
 											<p className="text-sm font-medium text-foreground">
 												Proof Hash (off-chain)
 											</p>
-											<Badge variant="outline" className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600">
+											<Badge
+												variant="outline"
+												className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600"
+											>
 												Off-chain
 											</Badge>
 										</div>
@@ -934,7 +938,8 @@ export default function PostDetail() {
 											</Button>
 										</div>
 										<p className="mt-1 text-[11px] text-muted-foreground">
-											This is a local proof hash. A clickable BSCScan link will appear when on-chain commits are enabled.
+											This is a local proof hash. A clickable BSCScan link will
+											appear when on-chain commits are enabled.
 										</p>
 									</div>
 								) : (
