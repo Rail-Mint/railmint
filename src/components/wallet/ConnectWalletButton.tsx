@@ -38,18 +38,16 @@ export function ConnectWalletButton({
 	compact = false,
 }: ConnectWalletButtonProps) {
 	const { toast } = useToast();
-	const { disconnect, disconnectAsync } = useDisconnect();
-	const { connector } = useAccount();
+	const { disconnect } = useDisconnect();
 
 	const handleDisconnect = async () => {
 		try {
-			if (connector) {
-				await disconnectAsync({ connector });
-				return;
-			}
-			await disconnectAsync();
-		} catch {
+			// Always call disconnect without specifying connector to ensure
+			// all connections are cleared regardless of connector state
 			disconnect();
+		} catch {
+			// Fallback: force page reload to clear stale wallet state
+			window.location.reload();
 		}
 	};
 

@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -91,7 +90,7 @@ function analyzeContent(content: string): ContentAnalysis {
 	};
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
@@ -114,6 +113,8 @@ serve(async (req) => {
 		if (creatorErr || !creator)
 			throw new Error("Creator not found. Create a clone first.");
 
+		const creatorData = creator as any;
+
 		// Get current open epoch
 		const { data: epoch } = await supabase
 			.from("epochs")
@@ -124,6 +125,7 @@ serve(async (req) => {
 			.single();
 
 		if (!epoch) throw new Error("No open epoch found.");
+		const epochData = epoch as any;
 
 		// BNB topic seeds
 		const topics = [
@@ -137,7 +139,7 @@ serve(async (req) => {
 			"BNB Chain security and audit best practices",
 		];
 		const topic = topics[Math.floor(Math.random() * topics.length)];
-		const promptText = creator.prompt_template.replace("{{topic}}", topic);
+		const promptText = creatorData.prompt_template.replace("{{topic}}", topic);
 
 		let contentText: string;
 		let isFallback = false;
@@ -163,7 +165,7 @@ serve(async (req) => {
 						messages: [
 							{
 								role: "system",
-								content: `You are an AI content creator clone with this persona: ${creator.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write 150-300 words. Do not include any markdown formatting.`,
+								content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write 150-300 words. Do not include any markdown formatting.`,
 							},
 							{ role: "user", content: promptText },
 						],
@@ -185,7 +187,7 @@ serve(async (req) => {
 			contentText = `The BNB Chain ecosystem continues to evolve with exciting developments in ${topic}. As a growing network supporting thousands of dApps, BNB Chain remains a key player in the blockchain space. Developers and users alike are benefiting from low transaction fees, fast confirmation times, and a robust infrastructure. The community's commitment to innovation ensures BNB Chain stays at the forefront of Web3 adoption. Stay tuned for more updates as the ecosystem expands.`;
 		}
 
-		// Compute hashes using a simple approach (we use the same canonical format as client-side)
+		// Compute hashes
 		const encoder = new TextEncoder();
 		const postId = crypto.randomUUID();
 
@@ -201,14 +203,14 @@ serve(async (req) => {
 		}
 
 		const promptHash = await sha256Hex(
-			`GOODVIBES_PROMPT_V1\n${postId}\n${creator.id}\n${promptText}`,
+			`GOODVIBES_PROMPT_V1\n${postId}\n${creatorData.id}\n${promptText}`,
 		);
 		const contentHash = await sha256Hex(
 			`GOODVIBES_CONTENT_V1\n${postId}\n${contentText}`,
 		);
 		const createdAt = new Date().toISOString();
 		const metaHash = await sha256Hex(
-			`GOODVIBES_META_V1\n${modelVersion}\n${createdAt}\n${creator.wallet_address}`,
+			`GOODVIBES_META_V1\n${modelVersion}\n${createdAt}\n${creatorData.wallet_address}`,
 		);
 
 		// Mock tx hash
@@ -225,13 +227,11 @@ serve(async (req) => {
 				.map((b) => b.toString(16).padStart(2, "0"))
 				.join("");
 
-		// Insert post
-		const analysis = analyzeContent(contentText);
-
+		// Insert post (only columns that exist in the schema)
 		const { error: insertErr } = await supabase.from("posts").insert({
 			id: postId,
-			creator_id: creator.id,
-			epoch_id: epoch.id,
+			creator_id: creatorData.id,
+			epoch_id: epochData.id,
 			prompt_text: promptText,
 			content_text: contentText,
 			prompt_hash: promptHash,

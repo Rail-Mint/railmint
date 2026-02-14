@@ -22,7 +22,7 @@ export function useRegisterCreator() {
 			abi: CREATOR_REGISTRY_ABI,
 			functionName: "registerCreator",
 			args: [xHandle, profileHash],
-		});
+		} as any);
 	};
 
 	return {
