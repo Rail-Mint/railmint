@@ -100,27 +100,28 @@ Deno.serve(async (req: Request) => {
 			if (!contentText) throw new Error("Empty AI response");
 		} catch (aiErr) {
 			console.error("Falling back to template:", aiErr);
-			isFallback = true;
-			contentText = `The BNB Chain ecosystem continues to evolve with exciting developments in ${topic}. As a growing network supporting thousands of dApps, BNB Chain remains a key player in the blockchain space. Developers and users alike are benefiting from low transaction fees, fast confirmation times, and a robust infrastructure. The community's commitment to innovation ensures BNB Chain stays at the forefront of Web3 adoption. Stay tuned for more updates as the ecosystem expands.`;
+		isFallback = true;
+			contentText = `[${creatorData.clone_name}] The BNB Chain ecosystem continues to evolve with exciting developments in ${topic}. As a growing network supporting thousands of dApps, BNB Chain remains a key player in the blockchain space. Developers and users alike are benefiting from low transaction fees, fast confirmation times, and a robust infrastructure. The community's commitment to innovation ensures BNB Chain stays at the forefront of Web3 adoption. Stay tuned for more updates as the ecosystem expands.`;
 		}
 
 		// Compute hashes using keccak256 (matching client-side verification in PostDetail)
 		const postId = crypto.randomUUID();
 
+		// Use real newline characters (\n) — must match mock-contract.ts on the client
 		const promptHash = keccak256(
-			toBytes(`GOODVIBES_PROMPT_V1\n${postId}\n${creatorData.id}\n${promptText}`),
+			toBytes("GOODVIBES_PROMPT_V1\n" + postId + "\n" + creatorData.id + "\n" + promptText),
 		);
 		const contentHash = keccak256(
-			toBytes(`GOODVIBES_CONTENT_V1\n${postId}\n${contentText}`),
+			toBytes("GOODVIBES_CONTENT_V1\n" + postId + "\n" + contentText),
 		);
 		const createdAt = new Date().toISOString();
 		const metaHash = keccak256(
-			toBytes(`GOODVIBES_META_V1\n${modelVersion}\n${createdAt}\n${creatorData.wallet_address}`),
+			toBytes("GOODVIBES_META_V1\n" + modelVersion + "\n" + createdAt + "\n" + creatorData.wallet_address),
 		);
 
 		// Mock tx hash (also keccak256 for consistency)
 		const commitTxHash = keccak256(
-			toBytes(`mock-commit-${postId}-${Date.now()}`),
+			toBytes("mock-commit-" + postId + "-" + Date.now()),
 		);
 
 		// Insert post

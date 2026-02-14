@@ -225,8 +225,9 @@ export default function PostDetail() {
 				normalizedPost.id,
 				normalizedPost.content_text,
 			);
+			// Model version must match generate-post edge function
 			const recomputedMeta = computeMetaHash(
-				"gemini-3-flash-preview",
+				"google/gemini-2.5-flash",
 				normalizedPost.created_at,
 				cr.wallet_address,
 			);
@@ -314,7 +315,7 @@ export default function PostDetail() {
 		);
 		const contentValue = computeContentHash(post.id, post.content_text);
 		const metaValue = computeMetaHash(
-			"gemini-3-flash-preview",
+			"google/gemini-2.5-flash",
 			post.created_at,
 			creator.wallet_address,
 		);

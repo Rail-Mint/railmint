@@ -5,6 +5,7 @@ import {
 	parseEther,
 	Wallet,
 } from "https://esm.sh/ethers@6.13.4";
+import { keccak256, toBytes } from "https://esm.sh/viem@2.21.0";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -288,17 +289,17 @@ async function createPostFromMention(params: {
 	const createdAt = new Date().toISOString();
 	const postId = crypto.randomUUID();
 	const promptText = `X mention publish command ${params.sourceReference}`;
-	const promptHash = await sha256Hex(
-		`GOODVIBES_PROMPT_V1\n${postId}\n${params.creatorId}\n${promptText}`,
+	const promptHash = keccak256(
+		toBytes("GOODVIBES_PROMPT_V1\n" + postId + "\n" + params.creatorId + "\n" + promptText),
 	);
-	const contentHash = await sha256Hex(
-		`GOODVIBES_CONTENT_V1\n${postId}\n${params.contentText}`,
+	const contentHash = keccak256(
+		toBytes("GOODVIBES_CONTENT_V1\n" + postId + "\n" + params.contentText),
 	);
-	const metaHash = await sha256Hex(
-		`GOODVIBES_META_V1\nmention-publish\n${createdAt}\n${params.creatorWallet}`,
+	const metaHash = keccak256(
+		toBytes("GOODVIBES_META_V1\nmention-publish\n" + createdAt + "\n" + params.creatorWallet),
 	);
-	const commitTxHash = await sha256Hex(
-		`mock-mention-commit-${postId}-${Date.now()}`,
+	const commitTxHash = keccak256(
+		toBytes("mock-mention-commit-" + postId + "-" + Date.now()),
 	);
 	const analysis = analyzeContent(params.contentText);
 
