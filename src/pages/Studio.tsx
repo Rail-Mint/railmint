@@ -156,6 +156,9 @@ export default function Studio() {
             totalLikes={totalLikes}
             averageLikes={averageLikes}
             bestPost={bestPost}
+            stats={stats}
+            recentPosts={recentPosts}
+            rewardHistory={rewardHistory}
           />
         );
       case "leaderboard":
