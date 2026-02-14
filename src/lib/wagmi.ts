@@ -49,10 +49,10 @@ const connectors = connectorsForWallets(
 );
 
 export const config = createConfig({
-	chains: [opBNBTestnet, bscTestnet],
+	chains: [bscTestnet, opBNBTestnet],
 	connectors,
 	transports: {
-		[opBNBTestnet.id]: http(),
 		[bscTestnet.id]: http(),
+		[opBNBTestnet.id]: http(),
 	},
 });

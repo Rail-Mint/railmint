@@ -55,12 +55,12 @@ const RewardDistributorABI = [
 ] as const;
 
 // Contract Addresses from Environment Variables
-export const CREATOR_REGISTRY_ADDRESS = import.meta.env
-	.VITE_CREATOR_REGISTRY_ADDRESS as `0x${string}` | undefined;
-export const CONTENT_MANAGER_ADDRESS = import.meta.env
-	.VITE_CONTENT_PUBLISHING_ADDRESS as `0x${string}` | undefined;
-export const REWARD_DISTRIBUTOR_ADDRESS = import.meta.env
-	.VITE_REWARD_DISTRIBUTOR_ADDRESS as `0x${string}` | undefined;
+export const CREATOR_REGISTRY_ADDRESS = (import.meta.env
+	.VITE_CREATOR_REGISTRY_ADDRESS || "0x5d506f9a720a4639881b269f4899868bed800504") as `0x${string}` | undefined;
+export const CONTENT_MANAGER_ADDRESS = (import.meta.env
+	.VITE_CONTENT_PUBLISHING_ADDRESS || "0x9c458963d17142d0c28341b30b1055a1e73f562f") as `0x${string}` | undefined;
+export const REWARD_DISTRIBUTOR_ADDRESS = (import.meta.env
+	.VITE_REWARD_DISTRIBUTOR_ADDRESS || "0xef7f43074521b0e941c1be89df390a93cafb588f") as `0x${string}` | undefined;
 
 // Contract ABIs
 export const CREATOR_REGISTRY_ABI = CreatorRegistryABI;
