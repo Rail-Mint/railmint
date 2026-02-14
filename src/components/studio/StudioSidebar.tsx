@@ -2,6 +2,8 @@ import { motion } from "framer-motion";
 import {
   BarChart3,
   ChevronLeft,
+  Circle,
+  ExternalLink,
   FileText,
   Gift,
   LayoutGrid,
@@ -13,8 +15,10 @@ import {
   X,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { useAccount, useChainId } from "wagmi";
 import { BrandMark } from "@/components/branding/BrandMark";
 import { Button } from "@/components/ui/button";
+import { useContractStatus } from "@/hooks/useContractStatus";
 
 type NavItem = {
   key: string;
@@ -46,6 +50,9 @@ interface StudioSidebarProps {
 
 export function StudioSidebar({ collapsed, onToggle }: StudioSidebarProps) {
   const location = useLocation();
+  const { isConnected } = useAccount();
+  const chainId = useChainId();
+  const { mode, networkLabel, isDeployed } = useContractStatus();
   const segment = location.pathname.split("/")[2] || "overview";
   const activeKey = navItems.find((i) => i.key === segment)?.key ?? "overview";
 
@@ -116,6 +123,37 @@ export function StudioSidebar({ collapsed, onToggle }: StudioSidebarProps) {
           );
         })}
       </nav>
+
+      {/* Network status */}
+      <div className="mt-auto border-t border-border/20 px-3 py-3">
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-1.5" title={`${networkLabel} · ${isConnected ? `Chain ${chainId}` : "Disconnected"}`}>
+            <Circle className={`h-2.5 w-2.5 fill-current ${isConnected ? "text-emerald-500" : "text-muted-foreground/50"}`} />
+            <Circle className={`h-2.5 w-2.5 fill-current ${mode === "live" ? "text-emerald-500" : "text-amber-500"}`} />
+          </div>
+        ) : (
+          <div className="space-y-1.5 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <Circle className={`h-2 w-2 fill-current ${isConnected ? "text-emerald-500" : "text-muted-foreground/50"}`} />
+              {isConnected ? `Chain ${chainId}` : "Wallet disconnected"}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Circle className={`h-2 w-2 fill-current ${mode === "live" ? "text-emerald-500" : "text-amber-500"}`} />
+              <span>{networkLabel}</span>
+              {isDeployed && (
+                <a
+                  href="https://testnet.bscscan.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
+                >
+                  Verify <ExternalLink className="h-2.5 w-2.5" />
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
@@ -127,6 +165,9 @@ interface MobileSidebarProps {
 
 export function MobileStudioSidebar({ open, onClose }: MobileSidebarProps) {
   const location = useLocation();
+  const { isConnected } = useAccount();
+  const chainId = useChainId();
+  const { mode, networkLabel, isDeployed } = useContractStatus();
   const segment = location.pathname.split("/")[2] || "overview";
   const activeKey = navItems.find((i) => i.key === segment)?.key ?? "overview";
 
@@ -166,6 +207,28 @@ export function MobileStudioSidebar({ open, onClose }: MobileSidebarProps) {
             );
           })}
         </nav>
+
+        {/* Mobile network status */}
+        <div className="mt-4 border-t border-border/20 pt-3 px-1 space-y-1.5 text-[11px] text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <Circle className={`h-2 w-2 fill-current ${isConnected ? "text-emerald-500" : "text-muted-foreground/50"}`} />
+            {isConnected ? `Chain ${chainId}` : "Wallet disconnected"}
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Circle className={`h-2 w-2 fill-current ${mode === "live" ? "text-emerald-500" : "text-amber-500"}`} />
+            <span>{networkLabel}</span>
+            {isDeployed && (
+              <a
+                href="https://testnet.bscscan.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="ml-auto inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
+              >
+                Verify <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            )}
+          </div>
+        </div>
       </aside>
     </div>
   );
