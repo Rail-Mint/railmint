@@ -19,6 +19,13 @@ import { useAccount, useChainId } from "wagmi";
 import { BrandMark } from "@/components/branding/BrandMark";
 import { Button } from "@/components/ui/button";
 import { useContractStatus } from "@/hooks/useContractStatus";
+import {
+  CREATOR_REGISTRY_ADDRESS,
+  CONTENT_MANAGER_ADDRESS,
+  REWARD_DISTRIBUTOR_ADDRESS,
+} from "@/lib/contracts";
+
+const EXPLORER = "https://testnet.bscscan.com/address";
 
 type NavItem = {
   key: string;
@@ -141,14 +148,23 @@ export function StudioSidebar({ collapsed, onToggle }: StudioSidebarProps) {
               <Circle className={`h-2 w-2 fill-current ${mode === "live" ? "text-emerald-500" : "text-amber-500"}`} />
               <span>{networkLabel}</span>
               {isDeployed && (
-                <a
-                  href="https://testnet.bscscan.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
-                >
-                  Verify <ExternalLink className="h-2.5 w-2.5" />
-                </a>
+                <div className="flex flex-col gap-0.5 mt-1">
+                  {[
+                    { label: "Registry", addr: CREATOR_REGISTRY_ADDRESS },
+                    { label: "Content", addr: CONTENT_MANAGER_ADDRESS },
+                    { label: "Rewards", addr: REWARD_DISTRIBUTOR_ADDRESS },
+                  ].map((c) => (
+                    <a
+                      key={c.label}
+                      href={`${EXPLORER}/${c.addr}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
+                    >
+                      {c.label} <ExternalLink className="h-2.5 w-2.5" />
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
           </div>
@@ -218,14 +234,23 @@ export function MobileStudioSidebar({ open, onClose }: MobileSidebarProps) {
             <Circle className={`h-2 w-2 fill-current ${mode === "live" ? "text-emerald-500" : "text-amber-500"}`} />
             <span>{networkLabel}</span>
             {isDeployed && (
-              <a
-                href="https://testnet.bscscan.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-auto inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
-              >
-                Verify <ExternalLink className="h-2.5 w-2.5" />
-              </a>
+              <div className="flex flex-wrap gap-2 mt-1">
+                {[
+                  { label: "Registry", addr: CREATOR_REGISTRY_ADDRESS },
+                  { label: "Content", addr: CONTENT_MANAGER_ADDRESS },
+                  { label: "Rewards", addr: REWARD_DISTRIBUTOR_ADDRESS },
+                ].map((c) => (
+                  <a
+                    key={c.label}
+                    href={`${EXPLORER}/${c.addr}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    {c.label} <ExternalLink className="h-2.5 w-2.5" />
+                  </a>
+                ))}
+              </div>
             )}
           </div>
         </div>
