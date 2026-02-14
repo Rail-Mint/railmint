@@ -168,7 +168,7 @@ export default function Studio() {
       case "wallet":
         return <StudioWallet address={address} profile={profile} stats={stats} />;
       case "security":
-        return <StudioSecurity address={address} />;
+        return <StudioSecurity address={address} profile={profile} />;
       case "settings":
         return (
           <StudioSettings
