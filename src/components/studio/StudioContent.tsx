@@ -1,13 +1,42 @@
-import { CheckCircle2, ExternalLink, FileText, Filter, Hash, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, FileText, Filter, Loader2, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePublishContent } from "@/hooks/useContentManager";
 import { supabase } from "@/integrations/supabase/client";
 import type { CreatorProfile, PostPreview } from "@/hooks/useStudioData";
+
+const TOPIC_OPTIONS = [
+  { value: "random", label: "🎲 Random (AI picks)" },
+  { value: "BNB Chain ecosystem growth and developer adoption", label: "🌱 Ecosystem Growth" },
+  { value: "DeFi innovations on BNB Smart Chain", label: "💰 DeFi Innovations" },
+  { value: "BNB Greenfield decentralized storage", label: "📦 Greenfield Storage" },
+  { value: "Cross-chain interoperability with BNB Chain", label: "🔗 Cross-chain" },
+  { value: "NFT and gaming ecosystem on BNB Chain", label: "🎮 NFT & Gaming" },
+  { value: "BNB Chain security and audit best practices", label: "🛡️ Security & Audits" },
+  { value: "BNB Chain governance and community proposals", label: "🗳️ Governance" },
+  { value: "custom", label: "✏️ Custom topic…" },
+];
+
+const TONE_OPTIONS = [
+  { value: "default", label: "Use clone persona" },
+  { value: "educational", label: "Educational & informative" },
+  { value: "casual", label: "Casual & conversational" },
+  { value: "professional", label: "Professional & formal" },
+  { value: "hype", label: "Excited & bullish" },
+];
+
+const LENGTH_OPTIONS = [
+  { value: "short", label: "Short (80–150 words)" },
+  { value: "medium", label: "Medium (150–300 words)" },
+  { value: "long", label: "Long (300–500 words)" },
+];
 
 interface Props {
   profile: CreatorProfile;
@@ -16,12 +45,22 @@ interface Props {
   onPostsUpdate: (posts: PostPreview[]) => void;
 }
 
+type DialogStep = "options" | "review";
+
 export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: Props) {
   const { toast } = useToast();
   const { publishContent, isPending: isTxPending, isConfirming: isTxConfirming } =
     usePublishContent();
   const [generating, setGenerating] = useState(false);
   const [epochFilter, setEpochFilter] = useState<string>("all");
+
+  // Dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [step, setStep] = useState<DialogStep>("options");
+  const [selectedTopic, setSelectedTopic] = useState("random");
+  const [customTopic, setCustomTopic] = useState("");
+  const [selectedTone, setSelectedTone] = useState("default");
+  const [selectedLength, setSelectedLength] = useState("medium");
 
   const epochs = useMemo(() => {
     const set = new Set(recentPosts.map((p) => p.epoch_id));
@@ -36,12 +75,41 @@ export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: 
   const totalLikes = recentPosts.reduce((s, p) => s + p.like_count, 0);
   const committedCount = recentPosts.filter((p) => p.commit_tx_hash).length;
 
+  const resolvedTopic = selectedTopic === "custom" ? customTopic : selectedTopic;
+  const topicLabel =
+    selectedTopic === "random"
+      ? "Random (AI picks)"
+      : selectedTopic === "custom"
+        ? customTopic || "(empty)"
+        : TOPIC_OPTIONS.find((t) => t.value === selectedTopic)?.label ?? selectedTopic;
+  const toneLabel = TONE_OPTIONS.find((t) => t.value === selectedTone)?.label ?? selectedTone;
+  const lengthLabel = LENGTH_OPTIONS.find((l) => l.value === selectedLength)?.label ?? selectedLength;
+
+  function openDialog() {
+    setStep("options");
+    setDialogOpen(true);
+  }
+
+  function goToReview() {
+    if (selectedTopic === "custom" && !customTopic.trim()) {
+      toast({ title: "Enter a custom topic", variant: "destructive" });
+      return;
+    }
+    setStep("review");
+  }
+
   async function handleGenerate() {
     if (!address || !profile) return;
+    setDialogOpen(false);
     setGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke("generate-post", {
-        body: { wallet_address: address },
+        body: {
+          wallet_address: address,
+          topic: resolvedTopic === "random" ? undefined : resolvedTopic,
+          tone: selectedTone === "default" ? undefined : selectedTone,
+          length: selectedLength,
+        },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -101,7 +169,7 @@ export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: 
               </Select>
             )}
             <Button
-              onClick={handleGenerate}
+              onClick={openDialog}
               disabled={generating || isTxPending || isTxConfirming || !profile}
               size="sm"
               className="gap-2"
@@ -159,6 +227,118 @@ export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: 
           </Button>
         </CardContent>
       </Card>
+
+      {/* Generate Post Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-md bg-card border-border/40">
+          {step === "options" ? (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Generate Post
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-5 py-2">
+                {/* Topic */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Topic</Label>
+                  <Select value={selectedTopic} onValueChange={setSelectedTopic}>
+                    <SelectTrigger className="border-border/40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border/40 z-50">
+                      {TOPIC_OPTIONS.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedTopic === "custom" && (
+                    <Textarea
+                      placeholder="Describe your topic…"
+                      value={customTopic}
+                      onChange={(e) => setCustomTopic(e.target.value)}
+                      className="mt-2 min-h-[72px] border-border/40 text-sm"
+                    />
+                  )}
+                </div>
+
+                {/* Tone */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Tone</Label>
+                  <Select value={selectedTone} onValueChange={setSelectedTone}>
+                    <SelectTrigger className="border-border/40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border/40 z-50">
+                      {TONE_OPTIONS.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Length */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Length</Label>
+                  <Select value={selectedLength} onValueChange={setSelectedLength}>
+                    <SelectTrigger className="border-border/40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-card border-border/40 z-50">
+                      {LENGTH_OPTIONS.map((l) => (
+                        <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <Button onClick={goToReview} className="gap-2">
+                  Review <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-primary" />
+                  Review &amp; Generate
+                </DialogTitle>
+              </DialogHeader>
+
+              <div className="space-y-3 py-2">
+                <ReviewRow label="Clone" value={profile.clone_name} />
+                <ReviewRow label="Topic" value={topicLabel} />
+                <ReviewRow label="Tone" value={toneLabel} />
+                <ReviewRow label="Length" value={lengthLabel} />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <Button variant="ghost" size="sm" onClick={() => setStep("options")}>
+                  ← Back
+                </Button>
+                <Button onClick={handleGenerate} className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Generate Now
+                </Button>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between rounded-xl border border-border/30 bg-muted/20 px-4 py-2.5">
+      <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-sm font-medium text-right max-w-[60%]">{value}</span>
     </div>
   );
 }

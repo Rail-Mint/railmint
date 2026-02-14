@@ -12,7 +12,7 @@ Deno.serve(async (req: Request) => {
 		return new Response(null, { headers: corsHeaders });
 
 	try {
-		const { wallet_address } = await req.json();
+		const { wallet_address, topic: requestedTopic, tone, length } = await req.json();
 		if (!wallet_address) throw new Error("wallet_address is required");
 
 		const supabase = createClient(
@@ -44,18 +44,26 @@ Deno.serve(async (req: Request) => {
 		if (!epoch) throw new Error("No open epoch found.");
 		const epochData = epoch as any;
 
-		// BNB topic seeds
-		const topics = [
+		// Resolve topic
+		const defaultTopics = [
 			"BNB Chain ecosystem growth and developer adoption",
-			"opBNB Layer 2 scaling and transaction throughput",
-			"BNB Greenfield decentralized storage",
 			"DeFi innovations on BNB Smart Chain",
-			"BNB Chain governance and community proposals",
+			"BNB Greenfield decentralized storage",
 			"Cross-chain interoperability with BNB Chain",
 			"NFT and gaming ecosystem on BNB Chain",
 			"BNB Chain security and audit best practices",
+			"BNB Chain governance and community proposals",
 		];
-		const topic = topics[Math.floor(Math.random() * topics.length)];
+		const topic = requestedTopic || defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
+
+		// Build word-count guidance
+		const lengthGuide = length === "short" ? "80-150" : length === "long" ? "300-500" : "150-300";
+
+		// Build tone instruction
+		const toneInstruction = tone
+			? ` Adopt a ${tone} tone throughout.`
+			: "";
+
 		const promptText = creatorData.prompt_template.replace("{{topic}}", topic);
 
 		let contentText: string;
@@ -82,7 +90,7 @@ Deno.serve(async (req: Request) => {
 						messages: [
 							{
 								role: "system",
-								content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write 150-300 words. Do not include any markdown formatting.`,
+							content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write ${lengthGuide} words.${toneInstruction} Do not include any markdown formatting.`,
 							},
 							{ role: "user", content: promptText },
 						],
