@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, CheckCircle2, Loader2, Sparkles, XIcon } from "lucide-react";
+import { Bot, CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { keccak256, toHex } from "viem";
@@ -59,6 +59,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
+  const [checkingIdentity, setCheckingIdentity] = useState(false);
   const [selectedTone, setSelectedTone] = useState("strategist");
   const [selectedFocus, setSelectedFocus] = useState("defi");
   const [selectedGoal, setSelectedGoal] = useState("engage");
@@ -92,6 +93,63 @@ export function StudioOnboarding({ address, onComplete }: Props) {
     form.setValue("prompt_template", profile.prompt, { shouldDirty: true });
   }, [profile, form]);
 
+  // Early check: wallet already registered → skip onboarding
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("creators")
+        .select("id")
+        .ilike("wallet_address", address)
+        .maybeSingle();
+      if (!cancelled && data) {
+        toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+        onComplete();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address, onComplete, toast]);
+
+  /** Validate identity fields AND check for duplicates before advancing to step 2 */
+  const handleIdentityNext = useCallback(async () => {
+    const valid = await form.trigger(["x_handle", "clone_name"]);
+    if (!valid) return;
+
+    setCheckingIdentity(true);
+    try {
+      const rawHandle = form.getValues("x_handle");
+      const handle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
+      const cloneName = form.getValues("clone_name").trim();
+
+      // Parallel checks: handle, clone_name, wallet
+      const [handleRes, nameRes, walletRes] = await Promise.all([
+        supabase.from("creators").select("id").ilike("x_handle", handle).maybeSingle(),
+        supabase.from("creators").select("id").ilike("clone_name", cloneName).maybeSingle(),
+        supabase.from("creators").select("id").ilike("wallet_address", address).maybeSingle(),
+      ]);
+
+      if (walletRes.data) {
+        toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+        onComplete();
+        return;
+      }
+      if (handleRes.data) {
+        toast({ title: "Handle taken", description: `${handle} is already registered.`, variant: "destructive" });
+        return;
+      }
+      if (nameRes.data) {
+        toast({ title: "Clone name taken", description: `"${cloneName}" is already in use. Choose a different name.`, variant: "destructive" });
+        return;
+      }
+
+      setStep(2);
+    } catch {
+      toast({ title: "Check failed", description: "Could not verify uniqueness. Try again.", variant: "destructive" });
+    } finally {
+      setCheckingIdentity(false);
+    }
+  }, [form, address, onComplete, toast]);
+
   const handleCreate = useCallback(async () => {
     const values = form.getValues();
     const result = schema.safeParse(values);
@@ -104,38 +162,10 @@ export function StudioOnboarding({ address, onComplete }: Props) {
     try {
       const handle = values.x_handle.startsWith("@") ? values.x_handle : `@${values.x_handle}`;
 
-      // Check if handle is already taken
-      const { data: existing } = await supabase
-        .from("creators")
-        .select("id")
-        .ilike("x_handle", handle)
-        .maybeSingle();
-
-      if (existing) {
-        toast({ title: "Handle already taken", description: `${handle} is already registered. Please use a different X handle.`, variant: "destructive" });
-        setStep(1);
-        setSaving(false);
-        return;
-      }
-
-      // Check if wallet already has a profile
-      const { data: existingWallet } = await supabase
-        .from("creators")
-        .select("id")
-        .ilike("wallet_address", address)
-        .maybeSingle();
-
-      if (existingWallet) {
-        toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
-        onComplete();
-        return;
-      }
-
       const profileHash = keccak256(
         toHex(JSON.stringify({ persona: values.persona_text, prompt: values.prompt_template })),
       );
 
-      // Try on-chain registration if contracts are deployed
       if (contractsDeployed) {
         try {
           registerCreator(handle, profileHash as `0x${string}`);
@@ -144,7 +174,6 @@ export function StudioOnboarding({ address, onComplete }: Props) {
         }
       }
 
-      // Save to database
       const { error } = await supabase.from("creators").insert({
         wallet_address: address,
         x_handle: handle,
@@ -154,8 +183,20 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       });
 
       if (error) {
+        // Handle any race-condition duplicates at DB level
         if (error.message.includes("duplicate") || error.code === "23505") {
-          toast({ title: "Handle or wallet conflict", description: "This X handle or wallet is already registered. Try a different handle.", variant: "destructive" });
+          const msg = error.message.toLowerCase();
+          if (msg.includes("x_handle")) {
+            toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
+          } else if (msg.includes("wallet_address")) {
+            toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+            onComplete();
+            return;
+          } else if (msg.includes("clone_name")) {
+            toast({ title: "Name conflict", description: "This clone name was just taken. Go back and choose another.", variant: "destructive" });
+          } else {
+            toast({ title: "Conflict detected", description: "A duplicate record exists. Please check your handle and clone name.", variant: "destructive" });
+          }
           setStep(1);
           setSaving(false);
           return;
@@ -229,13 +270,12 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                   )}
                 </div>
                 <Button
-                  onClick={async () => {
-                    const valid = await form.trigger(["x_handle", "clone_name"]);
-                    if (valid) setStep(2);
-                  }}
-                  className="w-full"
+                  onClick={handleIdentityNext}
+                  disabled={checkingIdentity}
+                  className="w-full gap-2"
                 >
-                  Continue to Voice →
+                  {checkingIdentity && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {checkingIdentity ? "Checking…" : "Continue to Voice →"}
                 </Button>
               </CardContent>
             </Card>
