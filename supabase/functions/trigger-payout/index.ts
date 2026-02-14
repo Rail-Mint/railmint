@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { keccak256, toBytes } from "https://esm.sh/viem@2.21.0";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -20,17 +21,8 @@ Deno.serve(async (req: Request) => {
 			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 		);
 
-		// Generate mock payout tx hash
-		const encoder = new TextEncoder();
-		const hashBuffer = await crypto.subtle.digest(
-			"SHA-256",
-			encoder.encode(`mock-payout-${epoch_id}-${Date.now()}`),
-		);
-		const txHash =
-			"0x" +
-			Array.from(new Uint8Array(hashBuffer))
-				.map((b) => b.toString(16).padStart(2, "0"))
-				.join("");
+		// Generate mock payout tx hash using keccak256 for consistency
+		const txHash = keccak256(toBytes("mock-payout-" + epoch_id + "-" + Date.now()));
 
 		// Update epoch
 		const { error } = await supabase
