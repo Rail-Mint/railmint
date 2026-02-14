@@ -31,6 +31,7 @@ import { XIcon } from "@/components/ui/x-icon";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useToast } from "@/hooks/use-toast";
 import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
+import { useContractStatus } from "@/hooks/useContractStatus";
 import { supabase } from "@/integrations/supabase/client";
 
 const schema = z.object({
@@ -198,12 +199,14 @@ export default function Onboarding() {
 		}
 	};
 	const { toast } = useToast();
+	const { mode: contractMode } = useContractStatus();
 	const {
 		registerCreator,
 		hash,
 		isPending,
 		isConfirming,
 		isSuccess,
+		isDeployed: contractsDeployed,
 		error: web3Error,
 	} = useRegisterCreator();
 
@@ -613,27 +616,27 @@ export default function Onboarding() {
 			});
 			const profileHash = keccak256(toHex(profileData));
 
-			// Attempt Web3 registration first
-			try {
-				await registerCreator(handle, profileHash);
-
-				// Show pending transaction state
-				toast({
-					title: "Transaction pending",
-					description: "Please confirm the transaction in your wallet...",
-				});
-
-				// Store transaction hash for display
-				if (hash) {
-					setWeb3TxHash(hash);
+			// Attempt Web3 registration only if contracts are deployed
+			if (contractsDeployed) {
+				try {
+					await registerCreator(handle, profileHash);
+					toast({
+						title: "Transaction pending",
+						description: "Please confirm the transaction in your wallet...",
+					});
+					if (hash) {
+						setWeb3TxHash(hash);
+					}
+				} catch (web3Err) {
+					console.error("Web3 registration failed:", web3Err);
+					toast({
+						title: "Blockchain registration failed",
+						description: "Falling back to database registration only.",
+						variant: "destructive",
+					});
 				}
-			} catch (web3Err) {
-				console.error("Web3 registration failed:", web3Err);
-				toast({
-					title: "Blockchain registration failed",
-					description: "Falling back to database registration only.",
-					variant: "destructive",
-				});
+			} else {
+				console.info("[Onboarding] Contracts not deployed, skipping on-chain registration");
 			}
 
 			// Always save to Supabase as fallback/backup

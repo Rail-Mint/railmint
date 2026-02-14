@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { XIcon } from "@/components/ui/x-icon";
 import { useToast } from "@/hooks/use-toast";
+import { useContractStatus } from "@/hooks/useContractStatus";
 import { supabase } from "@/integrations/supabase/client";
 import {
 	computeContentHash,
@@ -126,6 +127,7 @@ export default function PostDetail() {
 	const { id } = useParams<{ id: string }>();
 	const { address } = useAccount();
 	const { toast } = useToast();
+	const { mode: contractMode } = useContractStatus();
 	const [post, setPost] = useState<PostDetailData | null>(null);
 	const [creator, setCreator] = useState<Creator | null>(null);
 	const [likeCount, setLikeCount] = useState(0);
@@ -905,9 +907,16 @@ export default function PostDetail() {
 
 								{post.commit_tx_hash ? (
 									<div className="rounded-xl border border-primary/30 bg-primary/10 p-3">
-										<p className="mb-1 text-sm font-medium text-foreground">
-											Onchain transaction
-										</p>
+										<div className="mb-1 flex items-center gap-2">
+											<p className="text-sm font-medium text-foreground">
+												Onchain transaction
+											</p>
+											{contractMode === "mock" && (
+												<Badge variant="outline" className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600">
+													Mock TX
+												</Badge>
+											)}
+										</div>
 										<a
 											href={getExplorerUrl(post.commit_tx_hash)}
 											target="_blank"
@@ -918,6 +927,11 @@ export default function PostDetail() {
 											{post.commit_tx_hash.slice(-8)}
 											<ExternalLink className="h-3 w-3" />
 										</a>
+										{contractMode === "mock" && (
+											<p className="mt-1 text-[11px] text-muted-foreground">
+												This is a simulated hash. Real on-chain commits will be available when contracts are deployed.
+											</p>
+										)}
 									</div>
 								) : (
 									<p className="rounded-xl border border-dashed border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
