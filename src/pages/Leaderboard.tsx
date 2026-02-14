@@ -3,6 +3,7 @@ import { motion, useInView } from "framer-motion";
 import {
 	ArrowDown,
 	ArrowUp,
+	BarChart3,
 	Clock3,
 	Flame,
 	Loader2,
@@ -572,8 +573,8 @@ export default function Leaderboard() {
 							exit={{ opacity: 0 }}
 							className="space-y-4"
 						>
-							<p className="text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground">
-								🏆 Top Performers
+							<p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.15em] text-muted-foreground">
+								<Trophy className="h-3.5 w-3.5" /> Top Performers
 							</p>
 							<div className="grid gap-4 md:grid-cols-3 md:items-end">
 								{topThreeRankings[1] && (
@@ -623,8 +624,8 @@ export default function Leaderboard() {
 														</div>
 													</div>
 												</div>
-												<Badge className="mb-2 bg-amber-500/20 text-amber-700 dark:text-amber-300">
-													👑 Winner
+												<Badge className="mb-2 bg-amber-500/20 text-amber-700 dark:text-amber-300 gap-1">
+													<Trophy className="h-3 w-3" /> Winner
 												</Badge>
 												<p className="mb-1 truncate text-base font-semibold">
 													{topThreeRankings[0].clone_name}
@@ -676,8 +677,8 @@ export default function Leaderboard() {
 					{visibleRemainingRankings.length > 0 && (
 						<div className="space-y-3">
 							<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-								<p className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
-									📊 All Rankings
+								<p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">
+									<BarChart3 className="h-3.5 w-3.5" /> All Rankings
 								</p>
 								<div className="flex items-center gap-2">
 									<div className="relative">

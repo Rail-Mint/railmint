@@ -1,4 +1,4 @@
-import { CheckCircle2, ChevronRight, FileText, Filter, Loader2, Sparkles } from "lucide-react";
+import { CheckCircle2, ChevronRight, Dice5, Edit3, FileText, Filter, Gamepad2, Globe, Link2, Loader2, Package, PenLine, Shield, Sparkles, Sprout, Vote, Wallet } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -13,15 +13,15 @@ import { supabase } from "@/integrations/supabase/client";
 import type { CreatorProfile, PostPreview } from "@/hooks/useStudioData";
 
 const TOPIC_OPTIONS = [
-  { value: "random", label: "🎲 Random (AI picks)" },
-  { value: "BNB Chain ecosystem growth and developer adoption", label: "🌱 Ecosystem Growth" },
-  { value: "DeFi innovations on BNB Smart Chain", label: "💰 DeFi Innovations" },
-  { value: "BNB Greenfield decentralized storage", label: "📦 Greenfield Storage" },
-  { value: "Cross-chain interoperability with BNB Chain", label: "🔗 Cross-chain" },
-  { value: "NFT and gaming ecosystem on BNB Chain", label: "🎮 NFT & Gaming" },
-  { value: "BNB Chain security and audit best practices", label: "🛡️ Security & Audits" },
-  { value: "BNB Chain governance and community proposals", label: "🗳️ Governance" },
-  { value: "custom", label: "✏️ Custom topic…" },
+  { value: "random", label: "Random (AI picks)", icon: Dice5 },
+  { value: "BNB Chain ecosystem growth and developer adoption", label: "Ecosystem Growth", icon: Sprout },
+  { value: "DeFi innovations on BNB Smart Chain", label: "DeFi Innovations", icon: Wallet },
+  { value: "BNB Greenfield decentralized storage", label: "Greenfield Storage", icon: Package },
+  { value: "Cross-chain interoperability with BNB Chain", label: "Cross-chain", icon: Link2 },
+  { value: "NFT and gaming ecosystem on BNB Chain", label: "NFT & Gaming", icon: Gamepad2 },
+  { value: "BNB Chain security and audit best practices", label: "Security & Audits", icon: Shield },
+  { value: "BNB Chain governance and community proposals", label: "Governance", icon: Vote },
+  { value: "custom", label: "Custom topic…", icon: PenLine },
 ];
 
 const TONE_OPTIONS = [
@@ -249,9 +249,17 @@ export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: 
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-card border-border/40 z-50">
-                      {TOPIC_OPTIONS.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                      ))}
+                      {TOPIC_OPTIONS.map((t) => {
+                        const Icon = t.icon;
+                        return (
+                          <SelectItem key={t.value} value={t.value}>
+                            <span className="flex items-center gap-2">
+                              <Icon className="h-3.5 w-3.5 shrink-0" />
+                              {t.label}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                   {selectedTopic === "custom" && (
