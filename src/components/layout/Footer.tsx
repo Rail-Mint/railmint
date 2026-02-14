@@ -1,4 +1,4 @@
-import { Circle } from "lucide-react";
+import { Circle, ExternalLink } from "lucide-react";
 import { useAccount, useChainId } from "wagmi";
 import { BrandMark } from "@/components/branding/BrandMark";
 import { useContractStatus } from "@/hooks/useContractStatus";
@@ -41,9 +41,14 @@ export function Footer() {
 						/>
 						{networkLabel}
 						{isDeployed && (
-							<span className="text-emerald-600 dark:text-emerald-400">
-								· Contracts live
-							</span>
+							<a
+								href="https://testnet.bscscan.com"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"
+							>
+								· Contracts live <ExternalLink className="h-2.5 w-2.5" />
+							</a>
 						)}
 					</span>
 				</div>
