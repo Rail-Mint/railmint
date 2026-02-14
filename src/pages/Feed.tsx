@@ -31,7 +31,6 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useHasUserLiked, useLikeContent } from "@/hooks/useContentManager";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Post {
@@ -70,14 +69,6 @@ const cardReveal = {
 export default function Feed() {
 	const { address } = useAccount();
 	const { toast } = useToast();
-	const {
-		likeContent,
-		isPending,
-		isConfirming,
-		isSuccess,
-		hash,
-		error: likeError,
-	} = useLikeContent();
 
 	const [posts, setPosts] = useState<Post[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -96,68 +87,6 @@ export default function Feed() {
 	useEffect(() => {
 		void loadData();
 	}, [address, epochFilter, page]);
-
-	useEffect(() => {
-		if (isPending && likingPostId) {
-			toast({
-				title: "Transaction pending",
-				description: "Please confirm the transaction in your wallet...",
-			});
-		}
-	}, [isPending, likingPostId, toast]);
-
-	useEffect(() => {
-		if (isConfirming && likingPostId) {
-			toast({
-				title: "Confirming transaction",
-				description: "Waiting for blockchain confirmation...",
-			});
-		}
-	}, [isConfirming, likingPostId, toast]);
-
-	useEffect(() => {
-		if (isSuccess && hash && likingPostId) {
-			toast({
-				title: "Like successful!",
-				description: (
-					<div className="flex flex-col gap-1">
-						<p>Your like has been recorded on the blockchain.</p>
-						<a
-							href={`https://opbnb-testnet.bscscan.com/tx/${hash}`}
-							target="_blank"
-							rel="noopener noreferrer"
-							className="text-primary underline hover:text-primary/80"
-						>
-							View Transaction: {hash.slice(0, 10)}...{hash.slice(-8)}
-						</a>
-					</div>
-				),
-			});
-			setPosts((prev) =>
-				prev.map((post) =>
-					post.id === likingPostId
-						? {
-								...post,
-								liked_by_me: true,
-								like_count: post.like_count + 1,
-							}
-						: post,
-				),
-			);
-			setLikingPostId(null);
-		}
-	}, [isSuccess, hash, likingPostId, toast]);
-
-	useEffect(() => {
-		if (likeError) {
-			toast({
-				title: "Like failed",
-				description: likeError.message || "Failed to like content",
-				variant: "destructive",
-			});
-			setLikingPostId(null);
-		}
-	}, [likeError, toast]);
 
 	async function loadData() {
 		setLoading(true);
@@ -232,10 +161,10 @@ export default function Feed() {
 			return;
 		}
 
-		if (isPending || isConfirming) {
+		if (likingPostId) {
 			toast({
-				title: "Transaction in progress",
-				description: "Please wait for the current transaction to complete.",
+				title: "Like in progress",
+				description: "Please wait for the current like to complete.",
 				variant: "default",
 			});
 			return;
@@ -541,19 +470,15 @@ export default function Feed() {
 														onClick={() =>
 															toggleLike(post.id, post.liked_by_me)
 														}
-														disabled={
-															(isPending || isConfirming) &&
-															likingPostId === post.id
-														}
-													>
-														{(isPending || isConfirming) &&
-														likingPostId === post.id ? (
-															<Loader2 className="mr-1 h-4 w-4 animate-spin" />
-														) : (
-															<Heart
-																className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
-															/>
-														)}
+													disabled={likingPostId === post.id}
+												>
+													{likingPostId === post.id ? (
+														<Loader2 className="mr-1 h-4 w-4 animate-spin" />
+													) : (
+														<Heart
+															className={`mr-1 h-4 w-4 ${post.liked_by_me ? "fill-current" : ""}`}
+														/>
+													)}
 														{post.like_count}
 													</Button>
 													{post.like_count >= 10 ? (

@@ -1,4 +1,3 @@
-import { parseEther } from "viem";
 import {
 	useReadContract,
 	useWaitForTransactionReceipt,
@@ -9,7 +8,10 @@ import {
 	type Epoch,
 	REWARD_DISTRIBUTOR_ABI,
 	REWARD_DISTRIBUTOR_ADDRESS,
+	isContractDeployed,
 } from "../lib/contracts";
+
+const deployed = isContractDeployed(REWARD_DISTRIBUTOR_ADDRESS);
 
 export function useDistributeRewards() {
 	const { data: hash, writeContract, isPending, error } = useWriteContract();
@@ -23,8 +25,12 @@ export function useDistributeRewards() {
 		creatorIds: bigint[],
 		amounts: bigint[],
 	) => {
+		if (!deployed) {
+			console.warn("[useDistributeRewards] Contract not deployed, skipping");
+			return;
+		}
 		writeContract({
-			address: REWARD_DISTRIBUTOR_ADDRESS,
+			address: REWARD_DISTRIBUTOR_ADDRESS!,
 			abi: REWARD_DISTRIBUTOR_ABI,
 			functionName: "distributeRewards",
 			args: [epochId, creatorIds, amounts],
@@ -49,8 +55,12 @@ export function useClaimReward() {
 	});
 
 	const claimReward = (epochId: bigint) => {
+		if (!deployed) {
+			console.warn("[useClaimReward] Contract not deployed, skipping");
+			return;
+		}
 		writeContract({
-			address: REWARD_DISTRIBUTOR_ADDRESS,
+			address: REWARD_DISTRIBUTOR_ADDRESS!,
 			abi: REWARD_DISTRIBUTOR_ABI,
 			functionName: "claimReward",
 			args: [epochId],
@@ -69,12 +79,12 @@ export function useClaimReward() {
 
 export function useGetEpochInfo(epochId: bigint | undefined) {
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: REWARD_DISTRIBUTOR_ADDRESS,
+		address: REWARD_DISTRIBUTOR_ADDRESS as `0x${string}`,
 		abi: REWARD_DISTRIBUTOR_ABI,
 		functionName: "getEpoch",
 		args: epochId !== undefined ? [epochId] : undefined,
 		query: {
-			enabled: epochId !== undefined,
+			enabled: deployed && epochId !== undefined,
 		},
 	});
 
@@ -88,12 +98,12 @@ export function useGetEpochInfo(epochId: bigint | undefined) {
 
 export function useGetPendingRewards(wallet: `0x${string}` | undefined) {
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: REWARD_DISTRIBUTOR_ADDRESS,
+		address: REWARD_DISTRIBUTOR_ADDRESS as `0x${string}`,
 		abi: REWARD_DISTRIBUTOR_ABI,
 		functionName: "getPendingWithdrawal",
 		args: wallet ? [wallet] : undefined,
 		query: {
-			enabled: !!wallet,
+			enabled: deployed && !!wallet,
 		},
 	});
 
@@ -110,12 +120,12 @@ export function useGetReward(
 	wallet: `0x${string}` | undefined,
 ) {
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: REWARD_DISTRIBUTOR_ADDRESS,
+		address: REWARD_DISTRIBUTOR_ADDRESS as `0x${string}`,
 		abi: REWARD_DISTRIBUTOR_ABI,
 		functionName: "getReward",
 		args: epochId !== undefined && wallet ? [epochId, wallet] : undefined,
 		query: {
-			enabled: epochId !== undefined && !!wallet,
+			enabled: deployed && epochId !== undefined && !!wallet,
 		},
 	});
 

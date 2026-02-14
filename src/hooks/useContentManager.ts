@@ -8,7 +8,10 @@ import {
 	CONTENT_MANAGER_ABI,
 	CONTENT_MANAGER_ADDRESS,
 	type Content,
+	isContractDeployed,
 } from "../lib/contracts";
+
+const deployed = isContractDeployed(CONTENT_MANAGER_ADDRESS);
 
 export function usePublishContent() {
 	const { data: hash, writeContract, isPending, error } = useWriteContract();
@@ -22,8 +25,12 @@ export function usePublishContent() {
 		contentHash: `0x${string}`,
 		ipfsUri: string,
 	) => {
+		if (!deployed) {
+			console.warn("[usePublishContent] Contract not deployed, skipping");
+			return;
+		}
 		writeContract({
-			address: CONTENT_MANAGER_ADDRESS,
+			address: CONTENT_MANAGER_ADDRESS!,
 			abi: CONTENT_MANAGER_ABI,
 			functionName: "publishContent",
 			args: [creatorId, contentHash, ipfsUri],
@@ -48,8 +55,12 @@ export function useLikeContent() {
 	});
 
 	const likeContent = (contentId: bigint) => {
+		if (!deployed) {
+			console.warn("[useLikeContent] Contract not deployed, skipping");
+			return;
+		}
 		writeContract({
-			address: CONTENT_MANAGER_ADDRESS,
+			address: CONTENT_MANAGER_ADDRESS!,
 			abi: CONTENT_MANAGER_ABI,
 			functionName: "likeContent",
 			args: [contentId],
@@ -68,12 +79,12 @@ export function useLikeContent() {
 
 export function useGetContent(contentId: bigint | undefined) {
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: CONTENT_MANAGER_ADDRESS,
+		address: CONTENT_MANAGER_ADDRESS as `0x${string}`,
 		abi: CONTENT_MANAGER_ABI,
 		functionName: "getContent",
 		args: contentId !== undefined ? [contentId] : undefined,
 		query: {
-			enabled: contentId !== undefined,
+			enabled: deployed && contentId !== undefined,
 		},
 	});
 
@@ -87,12 +98,12 @@ export function useGetContent(contentId: bigint | undefined) {
 
 export function useGetContentsByCreator(creatorId: bigint | undefined) {
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: CONTENT_MANAGER_ADDRESS,
+		address: CONTENT_MANAGER_ADDRESS as `0x${string}`,
 		abi: CONTENT_MANAGER_ABI,
 		functionName: "getCreatorContent",
 		args: creatorId !== undefined ? [creatorId] : undefined,
 		query: {
-			enabled: creatorId !== undefined,
+			enabled: deployed && creatorId !== undefined,
 		},
 	});
 
@@ -112,7 +123,7 @@ export function useHasUserLiked(
 	const voterAddress = voter || address;
 
 	const { data, isLoading, error, refetch } = useReadContract({
-		address: CONTENT_MANAGER_ADDRESS,
+		address: CONTENT_MANAGER_ADDRESS as `0x${string}`,
 		abi: CONTENT_MANAGER_ABI,
 		functionName: "hasLikedContent",
 		args:
@@ -120,7 +131,7 @@ export function useHasUserLiked(
 				? [contentId, voterAddress]
 				: undefined,
 		query: {
-			enabled: contentId !== undefined && !!voterAddress,
+			enabled: deployed && contentId !== undefined && !!voterAddress,
 		},
 	});
 
