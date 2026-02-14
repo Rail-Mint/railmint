@@ -1,122 +1,127 @@
 
 
-# CreatorRail AI — Full MVP Build Plan
+# Ensure Web3 Features Are Fully Enabled and Integrated per PRD
 
-## Overview
-A fullstack web app where creators set up AI clones that generate BNB ecosystem content, community members vote via likes, and a leaderboard tracks rankings per epoch. Smart contract integration is mocked for now with placeholder functions ready for real contract wiring later.
+## Current Web3 Status
 
----
+The project has a solid Web3 foundation but several features are partially wired or broken. Here is the full audit:
 
-## Design & Style
-- Clean modern aesthetic with light/dark toggle
-- Minimal, professional UI with clear typography
-- Subtle accent colors, card-based layouts
-- Responsive for desktop and mobile
+### What Works
+- Wallet connection via RainbowKit + Wagmi (MetaMask, Trust, Coinbase, Rainbow, Brave, WalletConnect)
+- Smart contracts written in Solidity: `CreatorRegistry`, `ContentManager`, `RewardDistributor`
+- Frontend hooks for all 3 contracts (`useCreatorRegistry`, `useContentManager`, `useRewardDistributor`)
+- Client-side keccak256 hash verification (prompt, content, meta hashes) in PostDetail
+- Hash computation in `generate-post` edge function
+- Mock transaction hash generation for `commit_tx_hash` and `payout_tx_hash`
+- Explorer URL linking (opBNB testnet)
 
----
-
-## Pages & Features
-
-### 1. Landing Page (`/`)
-- Hero section explaining CreatorRail AI concept
-- CTA buttons: "Connect Wallet" and "Explore Feed"
-- Stats section (total creators, posts, likes)
-- How-it-works steps
-
-### 2. Creator Onboarding (`/onboarding`)
-- Wallet-gated (must connect wallet first via RainbowKit)
-- Form: X handle, clone name, persona/style text, prompt template
-- Preview of clone profile before saving
-- Confirmation screen showing "Clone Ready" state
-
-### 3. Content Feed (`/feed`)
-- Grid/list of generated posts for current epoch
-- Each post card shows: creator info, content preview, like count, proof badge, timestamp
-- Sort by latest or most liked
-- Like button (wallet-gated, one like per wallet per post)
-- Filter by epoch
-
-### 4. Post Detail (`/post/:id`)
-- Full post content with creator info
-- Like button
-- **Proof Verification Panel**: shows promptHash, contentHash, metaHash
-- Client-side hash recomputation and comparison with stored values
-- Tx hash link (placeholder for now, will link to explorer when contract is live)
-- Share-to-X button via intent URL
-
-### 5. Leaderboard (`/leaderboard`)
-- Current epoch rankings by like count
-- Creator name, rank indicator, like count, avatar
-- Epoch selector to view past epochs
-- Epoch status banner with countdown and pool size
-
-### 6. Rewards History (`/rewards`)
-- Table of past epoch payouts
-- Columns: epoch, rank, creator, likes, reward amount, tx hash
-- Filters by epoch and pagination
-- Tx hash links (placeholder for now)
-
-### 7. Admin Panel (`/admin`)
-- Protected by admin role check
-- Close current epoch button
-- Trigger payout button (mocked for now)
-- View active/past epochs
-- Monitor generation job status
+### What Is Broken or Missing
 
 ---
 
-## Backend (Lovable Cloud / Supabase)
+## Gap 1: `close-epoch` queries non-existent columns
 
-### Database Tables
-- **creators** — wallet_address, x_handle, clone_name, persona_text, prompt_template
-- **posts** — creator_id, epoch_id, prompt_text, content_text, prompt_hash, content_hash, meta_hash, commit_tx_hash, is_fallback
-- **likes** — post_id, wallet_address (unique constraint on pair)
-- **epochs** — start_at, end_at, status (open/closed/paid), reward_pool, payout_tx_hash
-- **epoch_rewards** — epoch_id, creator_id, rank, like_count, reward_amount
-- **user_roles** — user_id, role (admin/user)
+The `close-epoch` edge function selects `quality_score`, `moderation_score`, `composite_score` from `posts`, but the database has no such columns. It also inserts these into `epoch_rewards`, which also lacks them. This causes the function to fail silently or error out.
 
-### Edge Functions
-1. **creator-register** — Save/update creator clone profile
-2. **generate-post** — Build prompt from clone profile → call Lovable AI → compute hashes → store post
-3. **like-post** — Validate unique wallet+post, insert like
-4. **leaderboard** — Aggregate likes per creator for an epoch
-5. **close-epoch** — Mark epoch closed, compute rankings, create reward records
-6. **trigger-payout** — Mock payout (store placeholder tx hash), mark epoch paid
-7. **verify-proof** — Return post proof data for client-side verification
-
-### AI Content Generation
-- Uses Lovable AI (Gemini model) via edge function
-- Prompt built from creator persona + template + BNB topic seed
-- Deterministic fallback template if AI fails (flagged as fallback_generated)
-- Output: 150-300 word content about BNB ecosystem
+**Fix:** Rewrite `close-epoch` to rank purely by like count (matching the actual schema). Remove all references to `quality_score`, `moderation_score`, `composite_score` from both the SELECT and INSERT. The `epoch_rewards` table only has: `id, epoch_id, creator_id, rank, like_count, reward_amount`.
 
 ---
 
-## Wallet Integration
-- RainbowKit + Wagmi for wallet connection
-- Wallet address used as user identity
-- Protected actions: like, create clone, admin actions
-- opBNB testnet chain configuration ready
+## Gap 2: Contract addresses not configured
 
-## Smart Contract (Mocked)
-- Hash computation (keccak256) implemented client-side for verification
-- Proof commit and payout functions return mock tx hashes
-- Contract interaction code structured so real contract can be wired in later
+The `.env` file has no `VITE_CREATOR_REGISTRY_ADDRESS`, `VITE_CONTENT_PUBLISHING_ADDRESS`, or `VITE_REWARD_DISTRIBUTOR_ADDRESS` set. All contract hook calls will silently fail (undefined address).
+
+**Fix:** Since contracts are not yet deployed to testnet, add graceful fallback handling in all hooks. When the contract address is `undefined`, the hooks should return "not deployed" state instead of silently failing. Add a visible indicator in the UI (e.g., badge on Studio/Feed) showing "Contracts: Testnet" or "Contracts: Mock" so users and judges know the system works with mock tx hashes while being ready for real deployment.
 
 ---
 
-## Authentication & Security
-- Wallet-based auth (no email/password)
-- Admin role stored in user_roles table with RLS
-- One-like-per-wallet enforced by DB unique constraint
-- Rate limiting on generation and like endpoints
-- Input validation with Zod on all forms and API inputs
+## Gap 3: ABI stubs don't match actual Solidity contracts
+
+The inline ABI stubs in `src/lib/contracts.ts` are minimal and don't include all functions from the actual Solidity contracts. For example:
+- Missing: `updateProfile`, `deactivateCreator`, `isXHandleAvailable`, `getTotalCreators` (only partially included)
+- Missing: `unlikeContent`, `deactivateContent`, `getCreatorContent`, `hasLikedContent`, `getTotalContents`
+- Missing: `createEpoch`, `getEpochCreators`, `getPendingWithdrawal`, `getContractBalance`, `withdrawExcess`
+
+The hooks reference functions like `getCreatorIdByWallet`, `getCreatorContent`, `hasLikedContent`, `getPendingWithdrawal` that are NOT in the ABI stubs.
+
+**Fix:** Update `src/lib/contracts.ts` to include the complete ABI surface matching the actual Solidity contracts, so when contracts are deployed, everything works without code changes.
 
 ---
 
-## Seed Data
-- 8-10 pre-generated posts with computed hashes
-- 5 sample creator profiles
-- 1 completed epoch with reward records
-- Sample likes distributed across posts
+## Gap 4: Dual write path (Supabase + on-chain) not consistent
+
+The Feed like flow calls both `likeContent(contentIdBigInt)` (on-chain) AND `supabase.from("likes").insert(...)` simultaneously. However:
+- The `contentIdBigInt` is derived from a UUID string via `BigInt()`, which will throw since UUIDs are not valid BigInt values
+- The on-chain like always fails silently (no contract deployed), but the Supabase write succeeds, masking the error
+- The Onboarding page calls `registerCreator()` on-chain but also writes to Supabase independently
+
+**Fix:**
+1. Fix the `BigInt(post.id)` conversion in Feed.tsx -- UUID cannot be BigInt. Use a sequential numeric content ID from the database or skip on-chain call when contracts are not deployed.
+2. Make the dual-write explicit: Supabase is the primary data store, on-chain is secondary/optional. Add a helper `isContractDeployed()` check that guards all write calls.
+3. Add a `useContractStatus()` hook that checks if contract addresses are configured and returns a status flag.
+
+---
+
+## Gap 5: On-chain registration in Onboarding skips when contract is not deployed
+
+The Onboarding page calls `registerCreator(xHandle, profileHash)` but if the contract isn't deployed, the transaction just fails silently. The user gets saved to Supabase but the on-chain step is skipped without feedback.
+
+**Fix:** Show a clear "On-chain registration" step status in the onboarding success screen. If contracts are deployed, show the tx hash and explorer link. If not, show "On-chain registration will be available when contracts are deployed to opBNB testnet" with a mock tx hash for demo purposes.
+
+---
+
+## Gap 6: Reward claim button has no guard
+
+The Rewards page has `useClaimReward` and `useGetPendingRewards` hooks that call the RewardDistributor contract. Without a deployed contract, these return undefined/error. The claim button should be disabled with explanation when contracts are not live.
+
+**Fix:** Add contract deployment status check to the claim button. Show "Claim (testnet)" when contracts are deployed, or "Claim (mock)" with a simulated success flow for demo/hackathon purposes.
+
+---
+
+## Gap 7: WalletConnect projectId is a placeholder
+
+The wagmi config uses `projectId: "railmindai-demo"` which causes WalletConnect to fail with console errors.
+
+**Fix:** Either get a real WalletConnect Cloud project ID or suppress the error more gracefully by filtering WalletConnect from connectors when no valid projectId is available.
+
+---
+
+## Implementation Plan
+
+### Task 1: Fix `close-epoch` edge function
+Remove non-existent column references. Rank by like count only. Insert only columns that exist in `epoch_rewards`.
+
+### Task 2: Complete ABI stubs in `contracts.ts`
+Add all functions from the 3 Solidity contracts to the inline ABI stubs so hooks can call them when contracts are deployed.
+
+### Task 3: Add `useContractStatus` utility hook
+A simple hook that checks if `VITE_CREATOR_REGISTRY_ADDRESS`, `VITE_CONTENT_PUBLISHING_ADDRESS`, `VITE_REWARD_DISTRIBUTOR_ADDRESS` are set, and returns `{ isDeployed: boolean, mode: 'live' | 'mock' }`.
+
+### Task 4: Fix Feed like flow
+- Replace `BigInt(post.id)` with a safe conversion or skip on-chain when contracts are not deployed
+- Guard all on-chain write calls with `isDeployed` check
+- Keep Supabase as primary data store
+
+### Task 5: Add contract status indicators to UI
+- Add a small badge/pill in the Navbar or footer: "opBNB Testnet" / "Mock Mode"
+- In PostDetail, show whether the `commit_tx_hash` is a real or mock transaction
+- In Rewards page, indicate "Mock Payouts" vs "Live Payouts"
+
+### Task 6: Fix WalletConnect projectId
+Handle the placeholder gracefully -- either remove WalletConnect from connectors or add error suppression.
+
+### Task 7: Ensure on-chain registration feedback in Onboarding
+Show clear status for the blockchain registration step with appropriate messaging for deployed vs mock mode.
+
+### Technical Details
+
+**Files to modify:**
+- `supabase/functions/close-epoch/index.ts` -- remove non-existent column references
+- `src/lib/contracts.ts` -- complete ABI stubs
+- `src/hooks/useContractStatus.ts` -- new file, contract deployment check
+- `src/pages/Feed.tsx` -- fix BigInt conversion, add deployment guard
+- `src/pages/Rewards.tsx` -- add claim button guard
+- `src/pages/PostDetail.tsx` -- indicate mock vs real tx
+- `src/components/layout/Navbar.tsx` -- add network/mode indicator
+- `src/lib/wagmi.ts` -- handle WalletConnect projectId gracefully
 
