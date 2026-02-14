@@ -1,127 +1,95 @@
 
 
-# Ensure Web3 Features Are Fully Enabled and Integrated per PRD
+# Ensure Web3 Features Work with the Current System
 
-## Current Web3 Status
+## Summary
 
-The project has a solid Web3 foundation but several features are partially wired or broken. Here is the full audit:
+After auditing every Web3 touchpoint, the previous fix round addressed the major crash (BigInt/UUID) and added the Mock Mode badge and claim guard. However, several integration issues remain that cause silent failures, confusing UX, or broken contract hook calls. This plan fixes them all.
 
-### What Works
-- Wallet connection via RainbowKit + Wagmi (MetaMask, Trust, Coinbase, Rainbow, Brave, WalletConnect)
-- Smart contracts written in Solidity: `CreatorRegistry`, `ContentManager`, `RewardDistributor`
-- Frontend hooks for all 3 contracts (`useCreatorRegistry`, `useContentManager`, `useRewardDistributor`)
-- Client-side keccak256 hash verification (prompt, content, meta hashes) in PostDetail
-- Hash computation in `generate-post` edge function
-- Mock transaction hash generation for `commit_tx_hash` and `payout_tx_hash`
-- Explorer URL linking (opBNB testnet)
+## Remaining Issues
 
-### What Is Broken or Missing
+### Issue 1: Contract hooks silently fail with `undefined` addresses
 
----
+All three hook files (`useCreatorRegistry.ts`, `useContentManager.ts`, `useRewardDistributor.ts`) pass `CREATOR_REGISTRY_ADDRESS`, `CONTENT_MANAGER_ADDRESS`, and `REWARD_DISTRIBUTOR_ADDRESS` directly to wagmi's `useWriteContract` and `useReadContract`. Since these env vars are not set, the value is `undefined`, which causes wagmi to throw internally or return empty results with no useful error.
 
-## Gap 1: `close-epoch` queries non-existent columns
+**Fix**: Add early guards in each hook. For write hooks, check `isContractDeployed()` before calling `writeContract` and throw a clear error. For read hooks, disable the query when the address is undefined (some already do via `enabled`, but `useGetTotalCreators` does not).
 
-The `close-epoch` edge function selects `quality_score`, `moderation_score`, `composite_score` from `posts`, but the database has no such columns. It also inserts these into `epoch_rewards`, which also lacks them. This causes the function to fail silently or error out.
+### Issue 2: Feed still imports `useLikeContent` but never calls `likeContent()`
 
-**Fix:** Rewrite `close-epoch` to rank purely by like count (matching the actual schema). Remove all references to `quality_score`, `moderation_score`, `composite_score` from both the SELECT and INSERT. The `epoch_rewards` table only has: `id, epoch_id, creator_id, rank, like_count, reward_amount`.
+The previous fix removed the on-chain `likeContent()` call from the like flow, but the `useLikeContent` hook is still imported and its `isPending`, `isConfirming`, `isSuccess`, `hash`, and `error` states are still wired to `useEffect` handlers. These effects will never fire (since `likeContent` is never called), creating dead code. Worse, the like button's `disabled` state still checks `isPending || isConfirming`, which reference the unused hook -- this works by accident but is confusing.
 
----
+**Fix**: Remove the `useLikeContent` import and all related `useEffect` handlers. The like button's disabled state should use a local `likingPostId` check only. Remove the unused `useHasUserLiked` import as well.
 
-## Gap 2: Contract addresses not configured
+### Issue 3: Onboarding `registerCreator()` fails silently when contracts are not deployed
 
-The `.env` file has no `VITE_CREATOR_REGISTRY_ADDRESS`, `VITE_CONTENT_PUBLISHING_ADDRESS`, or `VITE_REWARD_DISTRIBUTOR_ADDRESS` set. All contract hook calls will silently fail (undefined address).
+The onboarding flow calls `registerCreator(handle, profileHash)` which internally calls `writeContract({ address: undefined, ... })`. This throws, gets caught, and shows a destructive toast, but the `hash` variable is checked afterwards and will never be set. The flow works because it falls back to Supabase, but the UX shows a confusing "Blockchain registration failed" error toast on every registration.
 
-**Fix:** Since contracts are not yet deployed to testnet, add graceful fallback handling in all hooks. When the contract address is `undefined`, the hooks should return "not deployed" state instead of silently failing. Add a visible indicator in the UI (e.g., badge on Studio/Feed) showing "Contracts: Testnet" or "Contracts: Mock" so users and judges know the system works with mock tx hashes while being ready for real deployment.
+**Fix**: Guard the `registerCreator()` call with `isContractDeployed(CREATOR_REGISTRY_ADDRESS)`. When not deployed, skip the call entirely and show an informational message instead of an error. On the success screen (step 5), show "On-chain registration pending -- contracts not yet deployed" instead of nothing.
 
----
+### Issue 4: PostDetail shows mock tx hashes with no indication they are mock
 
-## Gap 3: ABI stubs don't match actual Solidity contracts
+The `commit_tx_hash` values are mock SHA-256 hashes generated by the `generate-post` edge function. PostDetail links these to `testnet.opbnbscan.com` where they will 404 since they are not real transactions.
 
-The inline ABI stubs in `src/lib/contracts.ts` are minimal and don't include all functions from the actual Solidity contracts. For example:
-- Missing: `updateProfile`, `deactivateCreator`, `isXHandleAvailable`, `getTotalCreators` (only partially included)
-- Missing: `unlikeContent`, `deactivateContent`, `getCreatorContent`, `hasLikedContent`, `getTotalContents`
-- Missing: `createEpoch`, `getEpochCreators`, `getPendingWithdrawal`, `getContractBalance`, `withdrawExcess`
+**Fix**: Add a small "Mock TX" indicator next to the explorer link when contract mode is "mock". Use `useContractStatus()` to determine this.
 
-The hooks reference functions like `getCreatorIdByWallet`, `getCreatorContent`, `hasLikedContent`, `getPendingWithdrawal` that are NOT in the ABI stubs.
+### Issue 5: `generate-post` uses SHA-256 for hashes but PostDetail uses keccak256 for verification
 
-**Fix:** Update `src/lib/contracts.ts` to include the complete ABI surface matching the actual Solidity contracts, so when contracts are deployed, everything works without code changes.
+The edge function computes hashes with `crypto.subtle.digest("SHA-256", ...)` but `PostDetail.tsx` uses `keccak256()` from viem for client-side verification. These will never match, causing all verification checks to show "Mismatch".
 
----
+**Fix**: Update `generate-post` to use keccak256 (via a pure JS implementation or import from a Deno-compatible library) so hashes match the client-side verification. Alternatively, update `mock-contract.ts` to use SHA-256 to match the backend. The simpler fix is to align the backend with the client since viem's keccak256 is the standard.
 
-## Gap 4: Dual write path (Supabase + on-chain) not consistent
+### Issue 6: `trigger-payout` creates mock tx but doesn't link to real contracts
 
-The Feed like flow calls both `likeContent(contentIdBigInt)` (on-chain) AND `supabase.from("likes").insert(...)` simultaneously. However:
-- The `contentIdBigInt` is derived from a UUID string via `BigInt()`, which will throw since UUIDs are not valid BigInt values
-- The on-chain like always fails silently (no contract deployed), but the Supabase write succeeds, masking the error
-- The Onboarding page calls `registerCreator()` on-chain but also writes to Supabase independently
+This is working as designed for the hackathon MVP. No change needed -- the mock tx hash approach is consistent.
 
-**Fix:**
-1. Fix the `BigInt(post.id)` conversion in Feed.tsx -- UUID cannot be BigInt. Use a sequential numeric content ID from the database or skip on-chain call when contracts are not deployed.
-2. Make the dual-write explicit: Supabase is the primary data store, on-chain is secondary/optional. Add a helper `isContractDeployed()` check that guards all write calls.
-3. Add a `useContractStatus()` hook that checks if contract addresses are configured and returns a status flag.
+## Technical Implementation Details
 
----
+### File: `src/hooks/useCreatorRegistry.ts`
+- Import `isContractDeployed` and `CREATOR_REGISTRY_ADDRESS` check
+- In `useRegisterCreator`, guard `writeContract` call: if address is undefined, do nothing (or throw descriptive error)
+- In `useGetTotalCreators`, add `query: { enabled: isContractDeployed(CREATOR_REGISTRY_ADDRESS) }`
 
-## Gap 5: On-chain registration in Onboarding skips when contract is not deployed
+### File: `src/hooks/useContentManager.ts`
+- Same pattern: guard write calls, disable reads when address is undefined
+- Add `enabled: isContractDeployed(CONTENT_MANAGER_ADDRESS)` to `useGetContent` and `useGetContentsByCreator` queries
 
-The Onboarding page calls `registerCreator(xHandle, profileHash)` but if the contract isn't deployed, the transaction just fails silently. The user gets saved to Supabase but the on-chain step is skipped without feedback.
+### File: `src/hooks/useRewardDistributor.ts`
+- Same pattern for all hooks
+- Add guards to `useDistributeRewards`, `useClaimReward`
+- Add `enabled` checks to read hooks
 
-**Fix:** Show a clear "On-chain registration" step status in the onboarding success screen. If contracts are deployed, show the tx hash and explorer link. If not, show "On-chain registration will be available when contracts are deployed to opBNB testnet" with a mock tx hash for demo purposes.
+### File: `src/pages/Feed.tsx`
+- Remove `useLikeContent` and `useHasUserLiked` imports
+- Remove all 4 `useEffect` handlers that reference `isPending`, `isConfirming`, `isSuccess`, `hash`, `likeError`
+- Update like button disabled state to use only `likingPostId === post.id`
+- The like flow now uses Supabase only (already done), so no on-chain code needed
 
----
+### File: `src/pages/Onboarding.tsx`
+- Import `isContractDeployed` and `CREATOR_REGISTRY_ADDRESS`
+- Wrap the `registerCreator()` call with `if (isContractDeployed(CREATOR_REGISTRY_ADDRESS))`
+- When not deployed, skip the call and set a flag like `mockMode = true`
+- On success screen (step 5), show appropriate message based on deployment status
+- Remove the confusing "Blockchain registration failed" error toast when simply not deployed
 
-## Gap 6: Reward claim button has no guard
+### File: `src/pages/PostDetail.tsx`
+- Import `useContractStatus`
+- Next to the explorer link for `commit_tx_hash`, show a "(Mock)" label when `mode === "mock"`
+- Add tooltip explaining mock transactions link to a non-existent tx on the explorer
 
-The Rewards page has `useClaimReward` and `useGetPendingRewards` hooks that call the RewardDistributor contract. Without a deployed contract, these return undefined/error. The claim button should be disabled with explanation when contracts are not live.
+### File: `supabase/functions/generate-post/index.ts`
+- Replace `crypto.subtle.digest("SHA-256", ...)` with keccak256 to match client-side verification
+- Import a keccak256 implementation compatible with Deno (e.g., from `https://esm.sh/viem@2/utils` or use `js-sha3`)
+- This ensures the `promptHash`, `contentHash`, and `metaHash` stored in the database match what `PostDetail.tsx` recomputes
 
-**Fix:** Add contract deployment status check to the claim button. Show "Claim (testnet)" when contracts are deployed, or "Claim (mock)" with a simulated success flow for demo/hackathon purposes.
+### File: `src/lib/mock-contract.ts`
+- No changes needed (already uses keccak256 from viem)
 
----
+## Implementation Order
 
-## Gap 7: WalletConnect projectId is a placeholder
-
-The wagmi config uses `projectId: "railmindai-demo"` which causes WalletConnect to fail with console errors.
-
-**Fix:** Either get a real WalletConnect Cloud project ID or suppress the error more gracefully by filtering WalletConnect from connectors when no valid projectId is available.
-
----
-
-## Implementation Plan
-
-### Task 1: Fix `close-epoch` edge function
-Remove non-existent column references. Rank by like count only. Insert only columns that exist in `epoch_rewards`.
-
-### Task 2: Complete ABI stubs in `contracts.ts`
-Add all functions from the 3 Solidity contracts to the inline ABI stubs so hooks can call them when contracts are deployed.
-
-### Task 3: Add `useContractStatus` utility hook
-A simple hook that checks if `VITE_CREATOR_REGISTRY_ADDRESS`, `VITE_CONTENT_PUBLISHING_ADDRESS`, `VITE_REWARD_DISTRIBUTOR_ADDRESS` are set, and returns `{ isDeployed: boolean, mode: 'live' | 'mock' }`.
-
-### Task 4: Fix Feed like flow
-- Replace `BigInt(post.id)` with a safe conversion or skip on-chain when contracts are not deployed
-- Guard all on-chain write calls with `isDeployed` check
-- Keep Supabase as primary data store
-
-### Task 5: Add contract status indicators to UI
-- Add a small badge/pill in the Navbar or footer: "opBNB Testnet" / "Mock Mode"
-- In PostDetail, show whether the `commit_tx_hash` is a real or mock transaction
-- In Rewards page, indicate "Mock Payouts" vs "Live Payouts"
-
-### Task 6: Fix WalletConnect projectId
-Handle the placeholder gracefully -- either remove WalletConnect from connectors or add error suppression.
-
-### Task 7: Ensure on-chain registration feedback in Onboarding
-Show clear status for the blockchain registration step with appropriate messaging for deployed vs mock mode.
-
-### Technical Details
-
-**Files to modify:**
-- `supabase/functions/close-epoch/index.ts` -- remove non-existent column references
-- `src/lib/contracts.ts` -- complete ABI stubs
-- `src/hooks/useContractStatus.ts` -- new file, contract deployment check
-- `src/pages/Feed.tsx` -- fix BigInt conversion, add deployment guard
-- `src/pages/Rewards.tsx` -- add claim button guard
-- `src/pages/PostDetail.tsx` -- indicate mock vs real tx
-- `src/components/layout/Navbar.tsx` -- add network/mode indicator
-- `src/lib/wagmi.ts` -- handle WalletConnect projectId gracefully
+1. Fix contract hooks with deployment guards (3 files)
+2. Clean up Feed.tsx dead code (remove unused hook + effects)
+3. Fix Onboarding.tsx registration guard
+4. Fix generate-post hash algorithm (SHA-256 to keccak256)
+5. Add mock TX indicator to PostDetail
+6. Deploy updated generate-post edge function
 
