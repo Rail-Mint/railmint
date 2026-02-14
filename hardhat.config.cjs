@@ -17,14 +17,6 @@ const config = {
 		hardhat: {
 			chainId: 31337,
 		},
-		opbnbTestnet: {
-			url:
-				process.env.OPBNB_RPC_URL || "https://opbnb-testnet-rpc.bnbchain.org",
-			chainId: 5611,
-			accounts: process.env.TESTNET_PRIVATE_KEY
-				? [process.env.TESTNET_PRIVATE_KEY]
-				: [],
-		},
 		bscTestnet: {
 			url:
 				process.env.BSC_TESTNET_RPC_URL ||
@@ -38,19 +30,8 @@ const config = {
 	},
 	etherscan: {
 		apiKey: {
-			opbnbTestnet: process.env.OPBNB_SCAN_API_KEY || "",
 			bscTestnet: process.env.BSC_SCAN_API_KEY || "",
 		},
-		customChains: [
-			{
-				network: "opbnbTestnet",
-				chainId: 5611,
-				urls: {
-					apiURL: "https://api-opbnb-testnet.bscscan.com/api",
-					browserURL: "https://testnet.opbnbscan.com",
-				},
-			},
-		],
 	},
 	paths: {
 		sources: "./contracts",

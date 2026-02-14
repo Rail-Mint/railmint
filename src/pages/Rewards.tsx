@@ -527,7 +527,7 @@ export default function Rewards() {
 											</Button>
 											{!contractStatus.isDeployed && (
 												<p className="mt-2 text-xs text-muted-foreground">
-													On-chain claims available when contracts are deployed to opBNB testnet.
+													On-chain claims available when contracts are deployed to BSC testnet.
 												</p>
 											)}
 										</div>
