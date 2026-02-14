@@ -38,5 +38,5 @@ export async function mockPayoutEpoch(
 }
 
 export function getExplorerUrl(txHash: string): string {
-  return `https://testnet.opbnbscan.com/tx/${txHash}`;
+  return `https://testnet.bscscan.com/tx/${txHash}`;
 }

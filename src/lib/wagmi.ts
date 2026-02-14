@@ -7,22 +7,8 @@ import {
 	trustWallet,
 	walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
-import { defineChain } from "viem";
 import { createConfig, http } from "wagmi";
 import { bscTestnet } from "wagmi/chains";
-
-export const opBNBTestnet = defineChain({
-	id: 5611,
-	name: "opBNB Testnet",
-	nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-	rpcUrls: {
-		default: { http: ["https://opbnb-testnet-rpc.bnbchain.org"] },
-	},
-	blockExplorers: {
-		default: { name: "opBNBScan", url: "https://testnet.opbnbscan.com" },
-	},
-	testnet: true,
-});
 
 // WalletConnect requires a valid projectId from cloud.walletconnect.com.
 // When no valid ID is set, we exclude WalletConnect to avoid console errors.
@@ -49,10 +35,9 @@ const connectors = connectorsForWallets(
 );
 
 export const config = createConfig({
-	chains: [bscTestnet, opBNBTestnet],
+	chains: [bscTestnet],
 	connectors,
 	transports: {
 		[bscTestnet.id]: http(),
-		[opBNBTestnet.id]: http(),
 	},
 });

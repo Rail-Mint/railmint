@@ -49,13 +49,13 @@ async function main() {
 
 	console.log("\nVerify contracts on block explorer:");
 	console.log(
-		`npx hardhat verify --network opbnbTestnet ${creatorRegistryAddress}`,
+		`npx hardhat verify --network bscTestnet ${creatorRegistryAddress}`,
 	);
 	console.log(
-		`npx hardhat verify --network opbnbTestnet ${contentManagerAddress} ${creatorRegistryAddress}`,
+		`npx hardhat verify --network bscTestnet ${contentManagerAddress} ${creatorRegistryAddress}`,
 	);
 	console.log(
-		`npx hardhat verify --network opbnbTestnet ${rewardDistributorAddress} ${creatorRegistryAddress}`,
+		`npx hardhat verify --network bscTestnet ${rewardDistributorAddress} ${creatorRegistryAddress}`,
 	);
 }
 

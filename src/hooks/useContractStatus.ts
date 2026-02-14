@@ -20,6 +20,6 @@ export function useContractStatus() {
 		registryDeployed,
 		contentDeployed,
 		rewardDeployed,
-		networkLabel: allDeployed ? "opBNB Testnet" : "Mock Mode",
+		networkLabel: allDeployed ? "BSC Testnet" : "Mock Mode",
 	};
 }
