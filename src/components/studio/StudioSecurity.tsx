@@ -33,7 +33,7 @@ export function StudioSecurity({ address, profile }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
             <div className="relative flex h-20 w-20 items-center justify-center">
               <svg className="h-20 w-20 -rotate-90" viewBox="0 0 36 36">
                 <path

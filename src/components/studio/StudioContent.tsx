@@ -80,12 +80,12 @@ export function StudioContent({ profile, address, recentPosts, onPostsUpdate }: 
 
       {/* Content card */}
       <Card className="border-border/40">
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="flex items-center gap-2 text-lg">
             <FileText className="h-5 w-5 text-primary" />
             Content
           </CardTitle>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {epochs.length > 1 && (
               <Select value={epochFilter} onValueChange={setEpochFilter}>
                 <SelectTrigger className="h-8 w-[130px] text-xs border-border/40">

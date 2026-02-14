@@ -110,7 +110,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
       <Card className="border-border/40 overflow-hidden">
         <div className="h-20 bg-gradient-to-r from-primary/20 via-primary/10 to-transparent" />
         <CardContent className="-mt-10 space-y-4">
-          <div className="flex items-end justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex items-center gap-3">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl border-4 border-card bg-primary/10">
                 <User className="h-7 w-7 text-primary" />
