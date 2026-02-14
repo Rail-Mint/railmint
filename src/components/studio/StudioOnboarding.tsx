@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { keccak256, toHex } from "viem";
 import { z } from "zod";
-import { Badge } from "@/components/ui/badge";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -103,6 +103,34 @@ export function StudioOnboarding({ address, onComplete }: Props) {
     setSaving(true);
     try {
       const handle = values.x_handle.startsWith("@") ? values.x_handle : `@${values.x_handle}`;
+
+      // Check if handle is already taken
+      const { data: existing } = await supabase
+        .from("creators")
+        .select("id")
+        .ilike("x_handle", handle)
+        .maybeSingle();
+
+      if (existing) {
+        toast({ title: "Handle already taken", description: `${handle} is already registered. Please use a different X handle.`, variant: "destructive" });
+        setStep(1);
+        setSaving(false);
+        return;
+      }
+
+      // Check if wallet already has a profile
+      const { data: existingWallet } = await supabase
+        .from("creators")
+        .select("id")
+        .ilike("wallet_address", address)
+        .maybeSingle();
+
+      if (existingWallet) {
+        toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+        onComplete();
+        return;
+      }
+
       const profileHash = keccak256(
         toHex(JSON.stringify({ persona: values.persona_text, prompt: values.prompt_template })),
       );
@@ -127,8 +155,9 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 
       if (error) {
         if (error.message.includes("duplicate") || error.code === "23505") {
-          toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
-          onComplete();
+          toast({ title: "Handle or wallet conflict", description: "This X handle or wallet is already registered. Try a different handle.", variant: "destructive" });
+          setStep(1);
+          setSaving(false);
           return;
         }
         throw error;
@@ -199,7 +228,13 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                     <p className="mt-1 text-xs text-destructive">{form.formState.errors.clone_name.message}</p>
                   )}
                 </div>
-                <Button onClick={() => setStep(2)} className="w-full">
+                <Button
+                  onClick={async () => {
+                    const valid = await form.trigger(["x_handle", "clone_name"]);
+                    if (valid) setStep(2);
+                  }}
+                  className="w-full"
+                >
                   Continue to Voice →
                 </Button>
               </CardContent>
@@ -311,9 +346,9 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                   <p className="text-sm">{form.getValues("prompt_template")}</p>
                 </div>
                 {contractMode === "mock" && (
-                  <Badge variant="secondary" className="text-xs">
+                  <div className="inline-flex items-center rounded-full border border-transparent bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground">
                     Mock Mode — On-chain registration will be skipped
-                  </Badge>
+                  </div>
                 )}
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setStep(2)}>Back</Button>
