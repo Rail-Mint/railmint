@@ -4,8 +4,10 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { BrandMark } from "@/components/branding/BrandMark";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
+import { useContractStatus } from "@/hooks/useContractStatus";
 
 const navLinks = [
 	{ to: "/feed", label: "Feed" },
@@ -19,6 +21,7 @@ export function Navbar() {
 	const location = useLocation();
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const { isConnected } = useAccount();
+	const { mode, networkLabel } = useContractStatus();
 
 	return (
 		<header className="sticky top-0 z-50 border-b border-border/70 bg-background/72 backdrop-blur-md">
@@ -47,7 +50,17 @@ export function Navbar() {
 					))}
 				</nav>
 
-				<div className="flex items-center gap-2">
+			<div className="flex items-center gap-2">
+					<Badge
+						variant="outline"
+						className={`hidden text-[10px] font-semibold uppercase tracking-wider sm:inline-flex ${
+							mode === "live"
+								? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600"
+								: "border-amber-500/40 bg-amber-500/10 text-amber-600"
+						}`}
+					>
+						{networkLabel}
+					</Badge>
 					<Button
 						variant="ghost"
 						size="icon"

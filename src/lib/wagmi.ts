@@ -24,6 +24,11 @@ export const opBNBTestnet = defineChain({
 	testnet: true,
 });
 
+// WalletConnect requires a valid projectId from cloud.walletconnect.com.
+// When no valid ID is set, we exclude WalletConnect to avoid console errors.
+const wcProjectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined;
+const hasValidWcId = wcProjectId && wcProjectId.length > 10 && wcProjectId !== "railmindai-demo";
+
 const connectors = connectorsForWallets(
 	[
 		{
@@ -32,12 +37,14 @@ const connectors = connectorsForWallets(
 		},
 		{
 			groupName: "More wallets",
-			wallets: [walletConnectWallet, rainbowWallet, braveWallet],
+			wallets: hasValidWcId
+				? [walletConnectWallet, rainbowWallet, braveWallet]
+				: [rainbowWallet, braveWallet],
 		},
 	],
 	{
 		appName: "RailMintAI",
-		projectId: "railmindai-demo",
+		projectId: wcProjectId || "placeholder",
 	},
 );
 

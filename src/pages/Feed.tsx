@@ -261,31 +261,40 @@ export default function Feed() {
 				),
 			);
 		} else {
-			// Like - Web3 transaction + Supabase fallback
-			try {
-				const post = posts.find((p) => p.id === postId);
-				if (!post) return;
+		// Like - Supabase primary, on-chain secondary (if deployed)
+		try {
+			const post = posts.find((p) => p.id === postId);
+			if (!post) return;
 
-				setLikingPostId(postId);
+			setLikingPostId(postId);
 
-				// Call Web3 like transaction
-				const contentIdBigInt = BigInt(post.id);
-				likeContent(contentIdBigInt);
+			// Supabase is the primary data store
+			await supabase
+				.from("likes")
+				.insert({ post_id: postId, wallet_address: address });
 
-				// Supabase fallback for immediate UI update
-				await supabase
-					.from("likes")
-					.insert({ post_id: postId, wallet_address: address });
-			} catch (error: unknown) {
-				const errorMessage =
-					error instanceof Error ? error.message : "Failed to like content";
-				toast({
-					title: "Like failed",
-					description: errorMessage,
-					variant: "destructive",
-				});
-				setLikingPostId(null);
-			}
+			// On-chain like only if contracts are deployed (UUID cannot be BigInt)
+			// Skip on-chain call -- contract addresses are not configured yet
+			// When deployed, a numeric content ID mapping will be needed
+
+			setPosts((prev) =>
+				prev.map((p) =>
+					p.id === postId
+						? { ...p, liked_by_me: true, like_count: p.like_count + 1 }
+						: p,
+				),
+			);
+			setLikingPostId(null);
+		} catch (error: unknown) {
+			const errorMessage =
+				error instanceof Error ? error.message : "Failed to like content";
+			toast({
+				title: "Like failed",
+				description: errorMessage,
+				variant: "destructive",
+			});
+			setLikingPostId(null);
+		}
 		}
 	}
 

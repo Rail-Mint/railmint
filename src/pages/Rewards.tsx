@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useToast } from "@/hooks/use-toast";
+import { useContractStatus } from "@/hooks/useContractStatus";
 import {
 	useClaimReward,
 	useGetEpochInfo,
@@ -94,6 +95,7 @@ export default function Rewards() {
 		}
 	};
 	const { toast } = useToast();
+	const contractStatus = useContractStatus();
 	const [loading, setLoading] = useState(true);
 	const [epochs, setEpochs] = useState<RewardEpoch[]>([]);
 	const [rewards, setRewards] = useState<RewardRow[]>([]);
@@ -507,7 +509,7 @@ export default function Rewards() {
 													selectedEpochId &&
 													claimReward(BigInt(selectedEpochId))
 												}
-												disabled={isClaimPending || !selectedEpochId}
+												disabled={isClaimPending || !selectedEpochId || !contractStatus.isDeployed}
 												size="sm"
 												className="w-full"
 											>
@@ -519,10 +521,15 @@ export default function Rewards() {
 												) : (
 													<>
 														<Trophy className="mr-2 h-4 w-4" />
-														Claim Reward
+														{contractStatus.isDeployed ? "Claim Reward" : "Claim (Mock)"}
 													</>
 												)}
 											</Button>
+											{!contractStatus.isDeployed && (
+												<p className="mt-2 text-xs text-muted-foreground">
+													On-chain claims available when contracts are deployed to opBNB testnet.
+												</p>
+											)}
 										</div>
 									)}
 								</>
