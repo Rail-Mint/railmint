@@ -6,18 +6,6 @@ const corsHeaders = {
 		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-type CreatorAggregate = {
-	likeCount: number;
-	qualitySum: number;
-	moderationSum: number;
-	compositeSum: number;
-	postCount: number;
-};
-
-function round4(value: number): number {
-	return Math.round(value * 10000) / 10000;
-}
-
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
@@ -41,11 +29,10 @@ Deno.serve(async (req: Request) => {
 
 		if (updateErr) throw updateErr;
 
+		// Get all posts for this epoch (only columns that exist)
 		const { data: posts } = await supabase
 			.from("posts")
-			.select(
-				"id, creator_id, quality_score, moderation_score, composite_score",
-			)
+			.select("id, creator_id")
 			.eq("epoch_id", epoch_id);
 
 		if (!posts || posts.length === 0) {
@@ -60,69 +47,42 @@ Deno.serve(async (req: Request) => {
 			);
 		}
 
+		// Get likes for these posts
 		const postIds = posts.map((p: any) => p.id);
 		const { data: likes } = await supabase
 			.from("likes")
 			.select("post_id")
 			.in("post_id", postIds);
 		const likesArr = likes || [];
+
+		// Count likes per post
 		const likesByPost: Record<string, number> = {};
 		for (const like of likesArr as any[]) {
 			likesByPost[like.post_id] = (likesByPost[like.post_id] || 0) + 1;
 		}
 
-		const creatorStats: Record<string, CreatorAggregate> = {};
+		// Aggregate likes per creator
+		const creatorLikes: Record<string, number> = {};
 		for (const p of posts as any[]) {
-			if (!creatorStats[p.creator_id]) {
-				creatorStats[p.creator_id] = {
-					likeCount: 0,
-					qualitySum: 0,
-					moderationSum: 0,
-					compositeSum: 0,
-					postCount: 0,
-				};
+			if (!creatorLikes[p.creator_id]) {
+				creatorLikes[p.creator_id] = 0;
 			}
-			const stat = creatorStats[p.creator_id];
-			stat.likeCount += likesByPost[p.id] || 0;
-			stat.qualitySum += Number(p.quality_score || 0);
-			stat.moderationSum += Number(p.moderation_score || 1);
-			stat.compositeSum += Number(p.composite_score || 0);
-			stat.postCount += 1;
+			creatorLikes[p.creator_id] += likesByPost[p.id] || 0;
 		}
 
-		const ranked = Object.entries(creatorStats)
-			.map(([creator_id, stat]) => {
-				const avgQuality =
-					stat.postCount > 0 ? stat.qualitySum / stat.postCount : 0;
-				const avgModeration =
-					stat.postCount > 0 ? stat.moderationSum / stat.postCount : 1;
-				const avgComposite =
-					stat.postCount > 0 ? stat.compositeSum / stat.postCount : 0;
-				const rankingScore =
-					stat.likeCount +
-					avgComposite * 20 +
-					avgQuality * 5 +
-					avgModeration * 5;
-				return {
-					creator_id,
-					like_count: stat.likeCount,
-					quality_score: round4(avgQuality),
-					moderation_score: round4(avgModeration),
-					composite_score: round4(rankingScore),
-				};
-			})
-			.sort((a, b) => b.composite_score - a.composite_score)
+		// Rank by like count (descending)
+		const ranked = Object.entries(creatorLikes)
+			.map(([creator_id, like_count]) => ({ creator_id, like_count }))
+			.sort((a, b) => b.like_count - a.like_count)
 			.map((row, i) => ({
 				epoch_id,
 				creator_id: row.creator_id,
 				rank: i + 1,
 				like_count: row.like_count,
-				quality_score: row.quality_score,
-				moderation_score: row.moderation_score,
-				composite_score: row.composite_score,
 				reward_amount: 0,
 			}));
 
+		// Get reward pool
 		const { data: epoch } = await supabase
 			.from("epochs")
 			.select("reward_pool")
@@ -130,6 +90,7 @@ Deno.serve(async (req: Request) => {
 			.single();
 		const pool = Number((epoch as any)?.reward_pool || 0);
 
+		// Distribute rewards: top 3 get 50/30/20
 		const shares = [0.5, 0.3, 0.2];
 		for (let i = 0; i < ranked.length && i < shares.length; i++) {
 			ranked[i].reward_amount = pool * shares[i];
