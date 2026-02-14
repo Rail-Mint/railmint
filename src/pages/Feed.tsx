@@ -11,7 +11,7 @@ import {
 	Wand2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +69,7 @@ const cardReveal = {
 export default function Feed() {
 	const { address } = useAccount();
 	const { toast } = useToast();
+	const navigate = useNavigate();
 
 	const [posts, setPosts] = useState<Post[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -81,8 +82,8 @@ export default function Feed() {
 	const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>(
 		{},
 	);
-	const [generating, setGenerating] = useState(false);
 	const [likingPostId, setLikingPostId] = useState<string | null>(null);
+	const [hasCreatorProfile, setHasCreatorProfile] = useState(false);
 
 	useEffect(() => {
 		void loadData();
@@ -144,6 +145,18 @@ export default function Feed() {
 					)
 				: false,
 		}));
+
+		// Check if user has a creator profile
+		if (address) {
+			const { data: creator } = await supabase
+				.from("creators")
+				.select("id")
+				.ilike("wallet_address", address)
+				.maybeSingle();
+			setHasCreatorProfile(!!creator);
+		} else {
+			setHasCreatorProfile(false);
+		}
 
 		setPosts(enriched);
 		setEpochs(epochsRes.data || []);
@@ -227,38 +240,11 @@ export default function Feed() {
 		}
 	}
 
-	async function handleGeneratePost() {
-		if (!address) {
-			toast({
-				title: "Connect wallet",
-				description: "Connect your wallet first to generate a post.",
-				variant: "destructive",
-			});
-			return;
-		}
-		setGenerating(true);
-		try {
-			const { data, error } = await supabase.functions.invoke("generate-post", {
-				body: { wallet_address: address },
-			});
-			if (error) throw error;
-			if (data?.error) throw new Error(data.error);
-			toast({
-				title: "Post generated!",
-				description: "Your AI post is now live in the feed.",
-			});
-			setPage(1);
-			await loadData();
-		} catch (error: unknown) {
-			const errorMessage =
-				error instanceof Error ? error.message : "Could not generate post.";
-			toast({
-				title: "Generation failed",
-				description: errorMessage,
-				variant: "destructive",
-			});
-		} finally {
-			setGenerating(false);
+	function handleCreatePost() {
+		if (address && hasCreatorProfile) {
+			navigate("/studio/content");
+		} else {
+			navigate("/studio");
 		}
 	}
 
@@ -304,21 +290,14 @@ export default function Feed() {
 							Discover AI-generated BNB ecosystem posts, sort by momentum, and
 							reward the clones producing standout content.
 						</p>
-						{address && (
-							<Button
-								onClick={handleGeneratePost}
-								disabled={generating}
-								className="mt-3 gap-2"
-								size="sm"
-							>
-								{generating ? (
-									<Loader2 className="h-4 w-4 animate-spin" />
-								) : (
-									<Wand2 className="h-4 w-4" />
-								)}
-								{generating ? "Generating…" : "Generate Post"}
-							</Button>
-						)}
+						<Button
+							onClick={handleCreatePost}
+							className="mt-3 gap-2"
+							size="sm"
+						>
+							<Wand2 className="h-4 w-4" />
+							{address && hasCreatorProfile ? "Generate Post" : "Start Creating"}
+						</Button>
 					</div>
 
 					<div className="grid w-full grid-cols-1 gap-2 min-[480px]:grid-cols-2 lg:w-auto lg:grid-cols-3 lg:shrink-0">
