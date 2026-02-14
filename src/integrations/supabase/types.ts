@@ -24,6 +24,8 @@ export type Database = {
           updated_at: string
           wallet_address: string
           x_handle: string | null
+          x_verified: boolean
+          x_verified_at: string | null
         }
         Insert: {
           clone_name: string
@@ -34,6 +36,8 @@ export type Database = {
           updated_at?: string
           wallet_address: string
           x_handle?: string | null
+          x_verified?: boolean
+          x_verified_at?: string | null
         }
         Update: {
           clone_name?: string
@@ -44,8 +48,108 @@ export type Database = {
           updated_at?: string
           wallet_address?: string
           x_handle?: string | null
+          x_verified?: boolean
+          x_verified_at?: string | null
         }
         Relationships: []
+      }
+      donation_audit_log: {
+        Row: {
+          created_at: string
+          donation_id: string | null
+          error_text: string | null
+          event_type: string
+          id: string
+          metadata: Json | null
+          tx_hash: string | null
+        }
+        Insert: {
+          created_at?: string
+          donation_id?: string | null
+          error_text?: string | null
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          tx_hash?: string | null
+        }
+        Update: {
+          created_at?: string
+          donation_id?: string | null
+          error_text?: string | null
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          tx_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donation_audit_log_donation_id_fkey"
+            columns: ["donation_id"]
+            isOneToOne: false
+            referencedRelation: "donations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      donations: {
+        Row: {
+          amount: number
+          asset_symbol: string
+          chain_id: number
+          created_at: string
+          donor_wallet: string
+          failure_reason: string | null
+          id: string
+          mention_id: string | null
+          recipient_creator_id: string | null
+          recipient_wallet: string
+          status: string
+          tx_hash: string | null
+        }
+        Insert: {
+          amount: number
+          asset_symbol?: string
+          chain_id?: number
+          created_at?: string
+          donor_wallet: string
+          failure_reason?: string | null
+          id?: string
+          mention_id?: string | null
+          recipient_creator_id?: string | null
+          recipient_wallet: string
+          status?: string
+          tx_hash?: string | null
+        }
+        Update: {
+          amount?: number
+          asset_symbol?: string
+          chain_id?: number
+          created_at?: string
+          donor_wallet?: string
+          failure_reason?: string | null
+          id?: string
+          mention_id?: string | null
+          recipient_creator_id?: string | null
+          recipient_wallet?: string
+          status?: string
+          tx_hash?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "donations_mention_id_fkey"
+            columns: ["mention_id"]
+            isOneToOne: false
+            referencedRelation: "mentions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "donations_recipient_creator_id_fkey"
+            columns: ["recipient_creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       epoch_rewards: {
         Row: {
@@ -148,6 +252,57 @@ export type Database = {
           },
         ]
       }
+      mentions: {
+        Row: {
+          attempts: number
+          author_handle: string | null
+          author_wallet: string | null
+          created_at: string
+          error_text: string | null
+          id: string
+          last_attempt_at: string | null
+          mention_id: string
+          parsed_intent: string
+          payload: Json | null
+          platform: string
+          processed_at: string | null
+          raw_text: string
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          author_handle?: string | null
+          author_wallet?: string | null
+          created_at?: string
+          error_text?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          mention_id: string
+          parsed_intent?: string
+          payload?: Json | null
+          platform?: string
+          processed_at?: string | null
+          raw_text: string
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          author_handle?: string | null
+          author_wallet?: string | null
+          created_at?: string
+          error_text?: string | null
+          id?: string
+          last_attempt_at?: string | null
+          mention_id?: string
+          parsed_intent?: string
+          payload?: Json | null
+          platform?: string
+          processed_at?: string | null
+          raw_text?: string
+          status?: string
+        }
+        Relationships: []
+      }
       posts: {
         Row: {
           commit_tx_hash: string | null
@@ -220,6 +375,21 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
+        }
+        Relationships: []
+      }
+      webhook_nonces: {
+        Row: {
+          expires_at: string
+          nonce: string
+        }
+        Insert: {
+          expires_at: string
+          nonce: string
+        }
+        Update: {
+          expires_at?: string
+          nonce?: string
         }
         Relationships: []
       }
