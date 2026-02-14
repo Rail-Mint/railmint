@@ -272,7 +272,7 @@ export default function PostDetail() {
 	}
 
 	function shareToX() {
-		const text = `Check out this AI-generated BNB content on RailMintAI! 🚀`;
+		const text = `Check out this AI-generated BNB content on RailMintAI!`;
 		const url = window.location.href;
 		window.open(
 			`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,

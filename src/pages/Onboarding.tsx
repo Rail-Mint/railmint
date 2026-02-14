@@ -730,7 +730,7 @@ export default function Onboarding() {
 
 					{web3Error && (
 						<div className="mx-auto mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-600">
-							⚠️ Web3 registration failed: {web3Error.message}
+							Web3 registration failed: {web3Error.message}
 							<br />
 							<span className="text-xs">
 								Falling back to database registration...
