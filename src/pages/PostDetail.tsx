@@ -907,49 +907,35 @@ export default function PostDetail() {
 								/>
 
 								{post.commit_tx_hash ? (
-								<div className="rounded-xl border border-primary/30 bg-primary/10 p-3">
+									// The generate-post edge function produces local keccak256 proof hashes,
+									// not real on-chain transaction hashes. Until the function is updated to
+									// actually submit transactions, all commit hashes are off-chain proofs.
+									<div className="rounded-xl border border-primary/30 bg-primary/10 p-3">
 										<div className="mb-1 flex items-center gap-2">
 											<p className="text-sm font-medium text-foreground">
-												{contractMode === "mock" ? "Proof Hash (off-chain)" : "Onchain transaction"}
+												Proof Hash (off-chain)
 											</p>
-											{contractMode === "mock" && (
-												<Badge variant="outline" className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600">
-													Off-chain
-												</Badge>
-											)}
+											<Badge variant="outline" className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600">
+												Off-chain
+											</Badge>
 										</div>
-										{contractMode === "mock" ? (
-											<div className="flex items-center gap-2">
-												<code className="truncate text-xs text-muted-foreground">
-													{post.commit_tx_hash.slice(0, 20)}...
-													{post.commit_tx_hash.slice(-8)}
-												</code>
-												<Button
-													variant="ghost"
-													size="icon"
-													className="h-6 w-6"
-													onClick={() => copyHash(post.commit_tx_hash!)}
-												>
-													<Copy className="h-3 w-3" />
-												</Button>
-											</div>
-										) : (
-											<a
-												href={getExplorerUrl(post.commit_tx_hash)}
-												target="_blank"
-												rel="noopener noreferrer"
-												className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-											>
+										<div className="flex items-center gap-2">
+											<code className="truncate text-xs text-muted-foreground">
 												{post.commit_tx_hash.slice(0, 20)}...
 												{post.commit_tx_hash.slice(-8)}
-												<ExternalLink className="h-3 w-3" />
-											</a>
-										)}
-										{contractMode === "mock" && (
-											<p className="mt-1 text-[11px] text-muted-foreground">
-												This is a local proof hash. A clickable BSCScan link will appear when contracts are deployed on-chain.
-											</p>
-										)}
+											</code>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-6 w-6"
+												onClick={() => copyHash(post.commit_tx_hash!)}
+											>
+												<Copy className="h-3 w-3" />
+											</Button>
+										</div>
+										<p className="mt-1 text-[11px] text-muted-foreground">
+											This is a local proof hash. A clickable BSCScan link will appear when on-chain commits are enabled.
+										</p>
 									</div>
 								) : (
 									<p className="rounded-xl border border-dashed border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
