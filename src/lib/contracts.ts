@@ -1,6 +1,34 @@
-import ContentManagerArtifact from "../../artifacts/contracts/ContentManager.sol/ContentManager.json";
-import CreatorRegistryArtifact from "../../artifacts/contracts/CreatorRegistry.sol/CreatorRegistry.json";
-import RewardDistributorArtifact from "../../artifacts/contracts/RewardDistributor.sol/RewardDistributor.json";
+// Inline ABI stubs – the full Hardhat artifacts are only available after
+// `npx hardhat compile`. These minimal ABIs keep the build working and
+// provide enough surface for the hooks that reference them.
+
+const CreatorRegistryABI = [
+	"function registerCreator(string xHandle, bytes32 profileHash) external",
+	"function getCreator(uint256 creatorId) external view returns (tuple(uint256 id, address wallet, string xHandle, bytes32 profileHash, uint256 registeredAt, bool isActive))",
+	"function getCreatorByWallet(address wallet) external view returns (tuple(uint256 id, address wallet, string xHandle, bytes32 profileHash, uint256 registeredAt, bool isActive))",
+	"function creatorCount() external view returns (uint256)",
+	"event CreatorRegistered(uint256 indexed creatorId, address indexed wallet, string xHandle)",
+] as const;
+
+const ContentManagerABI = [
+	"function publishContent(uint256 creatorId, bytes32 contentHash, string ipfsUri) external",
+	"function likeContent(uint256 contentId) external",
+	"function getContent(uint256 contentId) external view returns (tuple(uint256 id, uint256 creatorId, bytes32 contentHash, string ipfsUri, uint256 publishedAt, uint256 likeCount, bool isActive))",
+	"function contentCount() external view returns (uint256)",
+	"event ContentPublished(uint256 indexed contentId, uint256 indexed creatorId, bytes32 contentHash)",
+	"event ContentLiked(uint256 indexed contentId, address indexed liker)",
+] as const;
+
+const RewardDistributorABI = [
+	"function createEpoch(uint256 startTime, uint256 endTime) external",
+	"function distributeRewards(uint256 epochId, uint256[] creatorIds, uint256[] amounts) external",
+	"function claimReward(uint256 epochId) external",
+	"function getEpoch(uint256 epochId) external view returns (tuple(uint256 id, uint256 startTime, uint256 endTime, uint256 totalRewards, bool distributed, uint256 distributedAt))",
+	"function epochCount() external view returns (uint256)",
+	"event EpochCreated(uint256 indexed epochId, uint256 startTime, uint256 endTime)",
+	"event RewardsDistributed(uint256 indexed epochId, uint256 totalAmount)",
+	"event RewardClaimed(uint256 indexed epochId, uint256 indexed creatorId, uint256 amount)",
+] as const;
 
 // Contract Addresses from Environment Variables
 export const CREATOR_REGISTRY_ADDRESS = import.meta.env
@@ -11,9 +39,9 @@ export const REWARD_DISTRIBUTOR_ADDRESS = import.meta.env
 	.VITE_REWARD_DISTRIBUTOR_ADDRESS as `0x${string}`;
 
 // Contract ABIs
-export const CREATOR_REGISTRY_ABI = CreatorRegistryArtifact.abi;
-export const CONTENT_MANAGER_ABI = ContentManagerArtifact.abi;
-export const REWARD_DISTRIBUTOR_ABI = RewardDistributorArtifact.abi;
+export const CREATOR_REGISTRY_ABI = CreatorRegistryABI;
+export const CONTENT_MANAGER_ABI = ContentManagerABI;
+export const REWARD_DISTRIBUTOR_ABI = RewardDistributorABI;
 
 // TypeScript Types matching Solidity structs
 

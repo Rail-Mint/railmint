@@ -5,10 +5,6 @@ import {
 	parseEther,
 	Wallet,
 } from "https://esm.sh/ethers@6.13.4";
-import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
-
-// Use `any` to avoid strict type checking for tables not in generated types
-type SupabaseAny = ReturnType<typeof createClient>;
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -194,13 +190,11 @@ function isInternalServiceCall(req: Request): boolean {
 	return authToken === serviceRoleKey || apikey === serviceRoleKey;
 }
 
-interface VerifyWebhookParams {
+async function verifyWebhookSignature(params: {
 	req: Request;
 	rawBody: string;
-	supabase: ReturnType<typeof createClient>;
-}
-
-async function verifyWebhookSignature(params: VerifyWebhookParams) {
+	supabase: any;
+}) {
 	const secret = Deno.env.get("X_WEBHOOK_SECRET");
 	if (!secret) return;
 
@@ -259,7 +253,7 @@ async function verifyWebhookSignature(params: VerifyWebhookParams) {
 }
 
 async function fetchCreatorByHandle(
-	supabase: ReturnType<typeof createClient>,
+	supabase: any,
 	xHandle?: string | null,
 ) {
 	const normalizedHandle = normalizeHandle(xHandle);
@@ -272,7 +266,7 @@ async function fetchCreatorByHandle(
 	return data;
 }
 
-async function fetchOpenEpoch(supabase: ReturnType<typeof createClient>) {
+async function fetchOpenEpoch(supabase: any) {
 	const { data } = await supabase
 		.from("epochs")
 		.select("id, reward_pool")
@@ -283,16 +277,14 @@ async function fetchOpenEpoch(supabase: ReturnType<typeof createClient>) {
 	return data;
 }
 
-interface CreatePostParams {
-	supabase: ReturnType<typeof createClient>;
+async function createPostFromMention(params: {
+	supabase: any;
 	creatorId: string;
 	creatorWallet: string;
 	epochId: number;
 	contentText: string;
 	sourceReference: string;
-}
-
-async function createPostFromMention(params: CreatePostParams) {
+}) {
 	const createdAt = new Date().toISOString();
 	const postId = crypto.randomUUID();
 	const promptText = `X mention publish command ${params.sourceReference}`;
@@ -310,6 +302,7 @@ async function createPostFromMention(params: CreatePostParams) {
 	);
 	const analysis = analyzeContent(params.contentText);
 
+	// Only insert columns that exist in the posts table schema
 	const { error } = await params.supabase.from("posts").insert({
 		id: postId,
 		creator_id: params.creatorId,
@@ -321,15 +314,6 @@ async function createPostFromMention(params: CreatePostParams) {
 		meta_hash: metaHash,
 		commit_tx_hash: commitTxHash,
 		is_fallback: false,
-		quality_score: analysis.qualityScore,
-		moderation_score: analysis.moderationScore,
-		engagement_score: analysis.engagementScore,
-		composite_score: analysis.compositeScore,
-		quality_flags: analysis.qualityFlags,
-		content_tags: analysis.contentTags,
-		risk_level: analysis.riskLevel,
-		source_platform: "x",
-		source_reference: params.sourceReference,
 		created_at: createdAt,
 	});
 
@@ -366,7 +350,7 @@ async function executeDonationTransfer(
 }
 
 async function buildAskResponse(
-	supabase: ReturnType<typeof createClient>,
+	supabase: any,
 	question: string,
 ) {
 	const mentionedHandle = question.match(/@[a-z0-9_]+/i)?.[0];
@@ -381,9 +365,9 @@ async function buildAskResponse(
 		if (!posts || posts.length === 0) {
 			return "I could not find recent BNB creator posts yet.";
 		}
-		const digest = posts
+		const digest = (posts as any[])
 			.map(
-				(p, index) =>
+				(p: any, index: number) =>
 					`${index + 1}) ${String(p.content_text).slice(0, 140).trim()}...`,
 			)
 			.join(" ");
@@ -401,9 +385,9 @@ async function buildAskResponse(
 		return `${creator.clone_name} has no published discovery posts yet.`;
 	}
 
-	const digest = creatorPosts
+	const digest = (creatorPosts as any[])
 		.map(
-			(p, index) =>
+			(p: any, index: number) =>
 				`${index + 1}) ${String(p.content_text).slice(0, 160).trim()}...`,
 		)
 		.join(" ");
@@ -411,7 +395,7 @@ async function buildAskResponse(
 	return `Latest from ${creator.clone_name}: ${digest}`;
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
@@ -457,13 +441,14 @@ serve(async (req) => {
 		let basePayload = (body.payload ?? {}) as Record<string, unknown>;
 
 		if (existingMention && processPending) {
-			if (existingMention.status !== "received") {
+			const existing = existingMention as any;
+			if (existing.status !== "received") {
 				return new Response(
 					JSON.stringify({
 						success: true,
 						skipped: true,
-						reason: `mention already in status ${existingMention.status}`,
-						mention_db_id: existingMention.id,
+						reason: `mention already in status ${existing.status}`,
+						mention_db_id: existing.id,
 					}),
 					{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
 				);
@@ -474,13 +459,11 @@ serve(async (req) => {
 				.from("mentions")
 				.update({
 					status: "processing",
-					attempts:
-						Number((existingMention as { attempts?: number }).attempts || 0) +
-						1,
+					attempts: Number(existing.attempts || 0) + 1,
 					last_attempt_at: claimTime,
 					error_text: null,
 				})
-				.eq("id", existingMention.id)
+				.eq("id", existing.id)
 				.eq("status", "received")
 				.select("id")
 				.maybeSingle();
@@ -491,34 +474,35 @@ serve(async (req) => {
 						success: true,
 						skipped: true,
 						reason: "mention already claimed",
-						mention_db_id: existingMention.id,
+						mention_db_id: existing.id,
 					}),
 					{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
 				);
 			}
 
-			mentionDbId = existingMention.id;
-			processingText = String(existingMention.raw_text || rawText || "").trim();
+			mentionDbId = existing.id;
+			processingText = String(existing.raw_text || rawText || "").trim();
 			if (!processingText) {
 				throw new Error("queued mention has empty text");
 			}
 			processingAuthorHandle =
-				normalizeHandle(existingMention.author_handle) || authorHandle;
-			processingAuthorWallet = existingMention.author_wallet
-				? String(existingMention.author_wallet)
+				normalizeHandle(existing.author_handle) || authorHandle;
+			processingAuthorWallet = existing.author_wallet
+				? String(existing.author_wallet)
 				: authorWallet;
 			basePayload = {
-				...((existingMention.payload as Record<string, unknown>) || {}),
+				...((existing.payload as Record<string, unknown>) || {}),
 				...basePayload,
 			};
 		} else if (existingMention) {
+			const existing = existingMention as any;
 			return new Response(
 				JSON.stringify({
 					success: true,
 					duplicate: true,
-					mention_db_id: existingMention.id,
-					status: existingMention.status,
-					payload: existingMention.payload,
+					mention_db_id: existing.id,
+					status: existing.status,
+					payload: existing.payload,
 				}),
 				{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
 			);
@@ -546,7 +530,7 @@ serve(async (req) => {
 				throw mentionInsertErr || new Error("Failed to create mention row");
 			}
 
-			mentionDbId = mentionInsert.id;
+			mentionDbId = (mentionInsert as any).id;
 
 			if (deferProcessing) {
 				return new Response(
@@ -562,7 +546,7 @@ serve(async (req) => {
 		}
 
 		const parsed = parseMention(processingText);
-		const openEpoch = await fetchOpenEpoch(supabase);
+		const openEpoch = await fetchOpenEpoch(supabase) as any;
 		const actionPayload: Record<string, unknown> = {};
 
 		if (parsed.intent === "publish") {
@@ -576,7 +560,7 @@ serve(async (req) => {
 				supabase,
 				body.payload?.creator_handle || body.creator_handle,
 			);
-			const creator = creatorFromAuthor || creatorFromPayload;
+			const creator = (creatorFromAuthor || creatorFromPayload) as any;
 
 			if (!creator) {
 				throw new Error("Creator not found for publish command");
@@ -614,7 +598,7 @@ serve(async (req) => {
 			const recipientCreator = await fetchCreatorByHandle(
 				supabase,
 				parsed.donationTargetHandle,
-			);
+			) as any;
 			if (!recipientCreator) {
 				throw new Error("Recipient creator not found");
 			}
@@ -638,8 +622,10 @@ serve(async (req) => {
 			if (donationInsertErr || !donationRow)
 				throw donationInsertErr || new Error("Failed to create donation row");
 
+			const donationData = donationRow as any;
+
 			await supabase.from("donation_audit_log").insert({
-				donation_id: donationRow.id,
+				donation_id: donationData.id,
 				event_type: "initiated",
 				metadata: {
 					mention_id: mentionId,
@@ -666,9 +652,9 @@ serve(async (req) => {
 						status: "failed",
 						failure_reason: failureMessage,
 					})
-					.eq("id", donationRow.id);
+					.eq("id", donationData.id);
 				await supabase.from("donation_audit_log").insert({
-					donation_id: donationRow.id,
+					donation_id: donationData.id,
 					event_type: "failed",
 					error_text: failureMessage,
 					metadata: {
@@ -686,12 +672,12 @@ serve(async (req) => {
 					tx_hash: transfer.txHash,
 					failure_reason: null,
 				})
-				.eq("id", donationRow.id);
+				.eq("id", donationData.id);
 
 			if (donationUpdateErr) throw donationUpdateErr;
 
 			await supabase.from("donation_audit_log").insert({
-				donation_id: donationRow.id,
+				donation_id: donationData.id,
 				event_type: transfer.status === "simulated" ? "simulated" : "submitted",
 				tx_hash: transfer.txHash,
 				metadata: {
@@ -709,7 +695,7 @@ serve(async (req) => {
 					.eq("id", openEpoch.id);
 			}
 
-			actionPayload.donation_id = donationRow.id;
+			actionPayload.donation_id = donationData.id;
 			actionPayload.tx_hash = transfer.txHash;
 			actionPayload.recipient_creator_id = recipientCreator.id;
 			actionPayload.recipient_wallet = recipientCreator.wallet_address;
@@ -748,8 +734,6 @@ serve(async (req) => {
 		console.error("process-mention error:", error);
 
 		try {
-			const body = await req.clone().json();
-			const mentionId = String(body.mention_id || "").trim();
 			if (mentionIdForFailure) {
 				const supabase = createClient(
 					Deno.env.get("SUPABASE_URL")!,
@@ -765,8 +749,8 @@ serve(async (req) => {
 					})
 					.eq("mention_id", mentionIdForFailure);
 			}
-		} catch (error) {
-			console.error("Failed to mark mention as failed:", error);
+		} catch (innerError) {
+			console.error("Failed to mark mention as failed:", innerError);
 		}
 
 		return new Response(

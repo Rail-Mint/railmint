@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -19,7 +18,7 @@ function round4(value: number): number {
 	return Math.round(value * 10000) / 10000;
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
@@ -61,19 +60,19 @@ serve(async (req) => {
 			);
 		}
 
-		const postIds = posts.map((p) => p.id);
+		const postIds = posts.map((p: any) => p.id);
 		const { data: likes } = await supabase
 			.from("likes")
 			.select("post_id")
 			.in("post_id", postIds);
 		const likesArr = likes || [];
 		const likesByPost: Record<string, number> = {};
-		for (const like of likesArr) {
+		for (const like of likesArr as any[]) {
 			likesByPost[like.post_id] = (likesByPost[like.post_id] || 0) + 1;
 		}
 
 		const creatorStats: Record<string, CreatorAggregate> = {};
-		for (const p of posts) {
+		for (const p of posts as any[]) {
 			if (!creatorStats[p.creator_id]) {
 				creatorStats[p.creator_id] = {
 					likeCount: 0,
@@ -129,7 +128,7 @@ serve(async (req) => {
 			.select("reward_pool")
 			.eq("id", epoch_id)
 			.single();
-		const pool = Number(epoch?.reward_pool || 0);
+		const pool = Number((epoch as any)?.reward_pool || 0);
 
 		const shares = [0.5, 0.3, 0.2];
 		for (let i = 0; i < ranked.length && i < shares.length; i++) {

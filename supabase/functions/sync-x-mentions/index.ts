@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { serve } from "https://esm.sh/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -215,7 +214,7 @@ async function triggerDrainWorker(params: {
 	return response.json().catch(() => ({}));
 }
 
-serve(async (req) => {
+Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
@@ -348,9 +347,10 @@ serve(async (req) => {
 					};
 				}
 
-				const payload = (mentionRow.payload || {}) as Record<string, unknown>;
+				const mentionData = mentionRow as any;
+				const payload = (mentionData.payload || {}) as Record<string, unknown>;
 				const alreadyReplied = typeof payload.x_reply_sent_at === "string";
-				const shouldReply = mentionRow.parsed_intent === "ask";
+				const shouldReply = mentionData.parsed_intent === "ask";
 				const replyText =
 					typeof payload.response === "string"
 						? payload.response

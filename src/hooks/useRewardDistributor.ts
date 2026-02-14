@@ -28,7 +28,7 @@ export function useDistributeRewards() {
 			abi: REWARD_DISTRIBUTOR_ABI,
 			functionName: "distributeRewards",
 			args: [epochId, creatorIds, amounts],
-		});
+		} as any);
 	};
 
 	return {
@@ -54,7 +54,7 @@ export function useClaimReward() {
 			abi: REWARD_DISTRIBUTOR_ABI,
 			functionName: "claimReward",
 			args: [epochId],
-		});
+		} as any);
 	};
 
 	return {

@@ -27,7 +27,7 @@ export function usePublishContent() {
 			abi: CONTENT_MANAGER_ABI,
 			functionName: "publishContent",
 			args: [creatorId, contentHash, ipfsUri],
-		});
+		} as any);
 	};
 
 	return {
@@ -53,7 +53,7 @@ export function useLikeContent() {
 			abi: CONTENT_MANAGER_ABI,
 			functionName: "likeContent",
 			args: [contentId],
-		});
+		} as any);
 	};
 
 	return {
