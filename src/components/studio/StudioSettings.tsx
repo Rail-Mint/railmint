@@ -37,11 +37,13 @@ export function StudioSettings({ densityCompact, onDensityChange, profile, onPro
     setDeactivating(true);
     try {
       const newStatus = !isActive;
-      const { error } = await supabase
-        .from("creators")
-        .update({ is_active: newStatus } as any)
-        .eq("id", profile.id);
-      if (error) throw error;
+      const { data: result, error } = await supabase.functions.invoke("update-profile", {
+        body: {
+          wallet_address: profile.wallet_address,
+          is_active: newStatus,
+        },
+      });
+      if (error || result?.error) throw new Error(result?.error || error?.message || "Update failed");
       toast({
         title: newStatus ? "Clone Reactivated" : "Clone Deactivated",
         description: newStatus

@@ -72,10 +72,10 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	const handleSave = useCallback(async () => {
 		if (!profile?.id) return;
 
-		const result = profileSchema.safeParse(form);
-		if (!result.success) {
+		const validation = profileSchema.safeParse(form);
+		if (!validation.success) {
 			const fieldErrors: Record<string, string> = {};
-			for (const issue of result.error.issues) {
+			for (const issue of validation.error.issues) {
 				fieldErrors[issue.path[0] as string] = issue.message;
 			}
 			setErrors(fieldErrors);
@@ -84,21 +84,21 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		setErrors({});
 		setSaving(true);
 
-		const { error } = await supabase
-			.from("creators")
-			.update({
+		const { data: result, error } = await supabase.functions.invoke("update-profile", {
+			body: {
+				wallet_address: profile.wallet_address,
 				clone_name: form.clone_name.trim(),
 				x_handle: form.x_handle.trim() || null,
 				persona_text: form.persona_text.trim(),
 				prompt_template: form.prompt_template.trim(),
-			})
-			.eq("id", profile.id);
+			},
+		});
 
 		setSaving(false);
-		if (error) {
+		if (error || result?.error) {
 			toast({
 				title: "Save failed",
-				description: error.message,
+				description: result?.error || error?.message || "Unknown error",
 				variant: "destructive",
 			});
 			return;

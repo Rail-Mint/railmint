@@ -18,6 +18,17 @@ function json(data: unknown, status = 200) {
 	});
 }
 
+// Simple in-memory rate limiter
+const rateLimitMap = new Map<string, number[]>();
+function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+	const now = Date.now();
+	const timestamps = (rateLimitMap.get(key) || []).filter(t => now - t < windowMs);
+	if (timestamps.length >= maxRequests) return false;
+	timestamps.push(now);
+	rateLimitMap.set(key, timestamps);
+	return true;
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
@@ -41,6 +52,11 @@ Deno.serve(async (req: Request) => {
 		}
 		if (requestedTopic && requestedTopic.length > 500) {
 			return json({ error: "Topic must be under 500 characters" }, 400);
+		}
+
+		// Rate limit: 5 posts per minute per wallet
+		if (!rateLimit(`generate-post:${wallet_address.toLowerCase()}`, 5, 60_000)) {
+			return json({ error: "Rate limit exceeded. Try again later." }, 429);
 		}
 
 		const supabase = createClient(
