@@ -27,6 +27,15 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@railmindai" />
     <meta name="twitter:image" content="/brand/railmindai-logo-1200w.png" />
+    <style>
+      /* Inline critical CSS for instant FCP */
+      body{margin:0;font-family:'Space Grotesk',system-ui,sans-serif;background:#fcfcfc;color:#1a1d27}
+      @media(prefers-color-scheme:dark){body{background:#0a0b10;color:#e8e9ed}}
+      .root-loader{display:flex;align-items:center;justify-content:center;min-height:100vh;flex-direction:column;gap:12px}
+      .root-loader-mark{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#f97316);animation:pulse-mark 1.5s ease-in-out infinite}
+      .root-loader-text{font-size:15px;font-weight:600;letter-spacing:-0.01em;opacity:.7}
+      @keyframes pulse-mark{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.04)}}
+    </style>
   </head>
 
   <body>
@@ -35,7 +44,12 @@
       if (typeof globalThis.global === "undefined") globalThis.global = globalThis;
       if (typeof globalThis.process === "undefined") globalThis.process = { env: {}, browser: true };
     </script>
-    <div id="root"></div>
+    <div id="root">
+      <div class="root-loader" aria-label="Loading RailMintAI">
+        <div class="root-loader-mark"></div>
+        <div class="root-loader-text">RailMintAI</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
