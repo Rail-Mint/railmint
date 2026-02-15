@@ -112,7 +112,7 @@ serve(async (req) => {
 
     return json({ error: "Invalid step. Use 'balance' or 'deploy'" }, 400);
   } catch (error: any) {
-    console.error("Error:", error);
+    console.error("deploy-contracts error:", error instanceof Error ? error.message : "unknown");
     return json({ error: "Operation failed" }, 500);
   }
 });

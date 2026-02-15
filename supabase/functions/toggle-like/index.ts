@@ -115,7 +115,11 @@ Deno.serve(async (req: Request) => {
 
     return json({ success: true, liked });
   } catch (e) {
-    console.error("toggle-like error:", e);
-    return json({ error: e instanceof Error ? e.message : "Operation failed" }, 400);
+    const errorId = crypto.randomUUID().slice(0, 8);
+    console.error(`[toggle-like:${errorId}]`, e instanceof Error ? e.message : e);
+    const msg = e instanceof Error && /signature|expired|wallet/i.test(e.message)
+      ? e.message
+      : "Operation failed";
+    return json({ error: msg, error_id: errorId }, 400);
   }
 });

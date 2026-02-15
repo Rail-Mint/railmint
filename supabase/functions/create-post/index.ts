@@ -118,7 +118,11 @@ Deno.serve(async (req: Request) => {
 
     return json({ success: true, post_id: postId });
   } catch (e) {
-    console.error("create-post error:", e);
-    return json({ error: e instanceof Error ? e.message : "Operation failed" }, 400);
+    const errorId = crypto.randomUUID().slice(0, 8);
+    console.error(`[create-post:${errorId}]`, e instanceof Error ? e.message : e);
+    const msg = e instanceof Error && /signature|expired|wallet/i.test(e.message)
+      ? e.message
+      : "Failed to create post";
+    return json({ error: msg, error_id: errorId }, 400);
   }
 });

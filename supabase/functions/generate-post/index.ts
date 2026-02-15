@@ -287,10 +287,10 @@ Deno.serve(async (req: Request) => {
 				});
 				commitTxHash = hash;
 				console.log(`Real BNB tx: ${hash}`);
-			} catch (txErr) {
-				console.error("BNB tx failed, using hash:", txErr);
-				commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
-			}
+		} catch (txErr) {
+			console.error("BNB tx failed, using fallback hash:", txErr instanceof Error ? txErr.message : "unknown");
+			commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
+		}
 		} else {
 			commitTxHash = keccak256(
 				toBytes("mock-commit-" + postId + "-" + Date.now()),
@@ -315,10 +315,11 @@ Deno.serve(async (req: Request) => {
 
 		return json({ success: true, post_id: postId, tx_hash: commitTxHash });
 	} catch (e) {
-		console.error("generate-post error:", e);
-		return json(
-			{ error: e instanceof Error ? e.message : "Unknown error" },
-			400,
-		);
+		const errorId = crypto.randomUUID().slice(0, 8);
+		console.error(`[generate-post:${errorId}]`, e instanceof Error ? e.message : e);
+		const msg = e instanceof Error && /signature|expired|wallet|rate limit|creator|epoch|tone|length|topic/i.test(e.message)
+			? e.message
+			: "Failed to generate post";
+		return json({ error: msg, error_id: errorId }, 400);
 	}
 });

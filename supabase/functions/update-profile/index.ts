@@ -142,7 +142,11 @@ Deno.serve(async (req: Request) => {
 
 		return json({ success: true });
 	} catch (e) {
-		console.error("update-profile error:", e);
-		return json({ error: e instanceof Error ? e.message : "An error occurred while updating profile" }, 500);
+		const errorId = crypto.randomUUID().slice(0, 8);
+		console.error(`[update-profile:${errorId}]`, e instanceof Error ? e.message : e);
+		const msg = e instanceof Error && /signature|expired|wallet/i.test(e.message)
+			? e.message
+			: "Failed to update profile";
+		return json({ error: msg, error_id: errorId }, 500);
 	}
 });
