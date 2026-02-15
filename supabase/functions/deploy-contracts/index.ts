@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   createWalletClient,
   createPublicClient,
@@ -25,21 +26,54 @@ const bscTestnet = defineChain({
   testnet: true,
 });
 
+async function requireAdmin(req: Request): Promise<string> {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
+  const apikey = req.headers.get("apikey")?.trim();
+
+  if (serviceRoleKey && (auth === serviceRoleKey || apikey === serviceRoleKey)) {
+    return "system";
+  }
+
+  if (!auth) throw new Error("Unauthorized");
+
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+
+  const { data: { user }, error } = await supabase.auth.getUser(auth);
+  if (error || !user) throw new Error("Unauthorized");
+
+  const { data: roles } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .eq("role", "admin")
+    .single();
+
+  if (!roles) throw new Error("Admin access required");
+  return user.id;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    try {
+      await requireAdmin(req);
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : "Unauthorized" }, 403);
+    }
+
     const body = await req.json().catch(() => ({}));
     const step = body.step || "balance";
 
     const privateKey = Deno.env.get("BNB_TESTNET_PRIVATE_KEY");
     if (!privateKey) {
-      return new Response(
-        JSON.stringify({ error: "BNB_TESTNET_PRIVATE_KEY not configured" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return json({ error: "Deployment key not configured" }, 400);
     }
 
     const account = privateKeyToAccount(
@@ -60,7 +94,6 @@ serve(async (req) => {
       return json({ error: "No tBNB balance" }, 400);
     }
 
-    // step=deploy: deploy a contract with provided abi + bytecode + optional args
     if (step === "deploy") {
       const { abi, bytecode, args, name } = body;
       if (!abi || !bytecode) return json({ error: "abi and bytecode required" }, 400);
@@ -80,10 +113,7 @@ serve(async (req) => {
     return json({ error: "Invalid step. Use 'balance' or 'deploy'" }, 400);
   } catch (error: any) {
     console.error("Error:", error);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return json({ error: "Operation failed" }, 500);
   }
 });
 
