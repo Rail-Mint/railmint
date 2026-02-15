@@ -51,9 +51,10 @@ export function Navbar() {
 				</nav>
 
 				<div className="flex items-center gap-2">
-					<Button
+				<Button
 						variant="ghost"
 						size="icon"
+						aria-label="Toggle theme"
 						onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
 					>
 						<Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
