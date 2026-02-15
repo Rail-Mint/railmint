@@ -1,3 +1,4 @@
+// Studio page – creator dashboard
 import { motion } from "framer-motion";
 import { useCallback, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
