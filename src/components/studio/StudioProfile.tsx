@@ -158,34 +158,13 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	}, [profile, toast]);
 
 	useEffect(() => {
-		const checkVerification = async () => {
-			const params = new URLSearchParams(window.location.search);
-			if (params.get("verified") === "true" && profile?.id) {
-				const handle = profile.x_handle?.replace("@", "");
-
-				const { error } = await supabase
-					.from("creators")
-					.update({
-						x_verified: true,
-						x_verified_at: new Date().toISOString(),
-					})
-					.eq("id", profile.id);
-
-				if (!error) {
-					onProfileUpdate({
-						...profile,
-						x_verified: true,
-						x_verified_at: new Date().toISOString(),
-					});
-					toast({ title: "X account verified!" });
-				}
-
-				window.history.replaceState({}, "", "/studio/profile");
-			}
-		};
-
-		checkVerification();
-	}, [profile, onProfileUpdate, toast]);
+		// Clean up URL params after OAuth redirect — verification status
+		// is handled server-side by the process-mention edge function
+		const params = new URLSearchParams(window.location.search);
+		if (params.get("verified") === "true") {
+			window.history.replaceState({}, "", "/studio/profile");
+		}
+	}, []);
 
 	if (!profile) return null;
 
