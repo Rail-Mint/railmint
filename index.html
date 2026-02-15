@@ -26,6 +26,11 @@
   </head>
 
   <body>
+    <script>
+      // Polyfills required by @metamask/sdk (EventEmitter depends on these globals)
+      if (typeof globalThis.global === "undefined") globalThis.global = globalThis;
+      if (typeof globalThis.process === "undefined") globalThis.process = { env: {}, browser: true };
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
