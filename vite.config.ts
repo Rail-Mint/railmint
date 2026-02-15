@@ -15,7 +15,6 @@ export default defineConfig(({ mode }) => ({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
-			events: "events",
 		},
 		dedupe: ["react", "react-dom", "react/jsx-runtime", "@metamask/sdk"],
 	},
