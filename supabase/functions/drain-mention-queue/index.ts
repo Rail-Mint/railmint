@@ -47,10 +47,24 @@ Deno.serve(async (req: Request) => {
 		return new Response(null, { headers: corsHeaders });
 
 	try {
-		const body = await req.json().catch(() => ({}));
-
 		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 		const supabaseUrl = Deno.env.get("SUPABASE_URL");
+		if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+		if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
+
+		// Authenticate: require service_role key
+		const authorization = req.headers.get("authorization")?.trim();
+		const apikey = req.headers.get("apikey")?.trim();
+		const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
+
+		if (authToken !== serviceRoleKey && apikey !== serviceRoleKey) {
+			return new Response(
+				JSON.stringify({ error: "Unauthorized. Service role access required." }),
+				{ status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+			);
+		}
+
+		const body = await req.json().catch(() => ({}));
 		if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 		if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
 
