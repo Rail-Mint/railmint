@@ -1,3 +1,13 @@
+import { buttonVariants } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
+import { formatTokenBalance, normalizeTokenUnit } from "@/lib/format-number";
+import { cn } from "@/lib/utils";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
 import {
 	BarChart3,
@@ -14,17 +24,7 @@ import {
 	Zap,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { useAccount, useDisconnect } from "wagmi";
-import { buttonVariants } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useToast } from "@/hooks/use-toast";
-import { formatTokenBalance, normalizeTokenUnit } from "@/lib/format-number";
-import { cn } from "@/lib/utils";
+import { useDisconnect } from "wagmi";
 
 interface ConnectWalletButtonProps {
 	className?: string;
@@ -273,7 +273,7 @@ export function ConnectWalletButton({
 									<button
 										type="button"
 										onClick={handleDisconnect}
-										className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive transition-all duration-200 hover:-translate-y-0.5 hover:border-destructive/65 hover:bg-destructive/30 hover:text-destructive"
+										className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/35 bg-destructive/10 px-3 py-2.5 text-sm font-medium text-destructive transition-all duration-200 hover:-translate-y-0.5 hover:border-destructive hover:bg-destructive hover:text-white"
 									>
 										<LogOut className="h-4 w-4" />
 										Disconnect

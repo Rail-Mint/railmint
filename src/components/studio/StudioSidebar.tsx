@@ -109,13 +109,13 @@ export function StudioSidebar({ collapsed, onToggle }: StudioSidebarProps) {
 					size="icon"
 					onClick={onToggle}
 					title={collapsed ? "Expand panel" : "Collapse panel"}
-					className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-primary"
+					className="h-10 w-10 rounded-lg bg-primary/5 text-primary border border-primary/20 hover:bg-primary/15 hover:border-primary/40 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5"
 				>
 					<motion.div
 						animate={{ rotate: collapsed ? 180 : 0 }}
 						transition={{ duration: 0.3, ease: "easeInOut" }}
 					>
-						<ChevronLeft className="h-4 w-4" />
+						<ChevronLeft className="h-5 w-5" />
 					</motion.div>
 				</Button>
 			</div>

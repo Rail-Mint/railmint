@@ -37,8 +37,6 @@ interface Post {
 	id: string;
 	content_text: string;
 	content_html: string | null;
-	prompt_hash: string;
-	content_hash: string;
 	commit_tx_hash: string | null;
 	is_fallback: boolean;
 	created_at: string;

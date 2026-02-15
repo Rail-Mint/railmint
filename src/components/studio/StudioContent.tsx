@@ -1,24 +1,3 @@
-import {
-	CheckCircle2,
-	ChevronRight,
-	Dice5,
-	Edit3,
-	FileText,
-	Filter,
-	Gamepad2,
-	Globe,
-	Link2,
-	Loader2,
-	Package,
-	PenLine,
-	Shield,
-	Sparkles,
-	Sprout,
-	Vote,
-	Wallet,
-} from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -41,6 +20,26 @@ import { useToast } from "@/hooks/use-toast";
 import { usePublishContent } from "@/hooks/useContentManager";
 import type { CreatorProfile, PostPreview } from "@/hooks/useStudioData";
 import { supabase } from "@/integrations/supabase/client";
+import {
+	CheckCircle2,
+	ChevronRight,
+	Dice5,
+	Edit3,
+	FileText,
+	Filter,
+	Gamepad2,
+	Link2,
+	Loader2,
+	Package,
+	PenLine,
+	Shield,
+	Sparkles,
+	Sprout,
+	Vote,
+	Wallet
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
 const TOPIC_OPTIONS = [
 	{ value: "random", label: "Random (AI picks)", icon: Dice5 },
@@ -96,6 +95,13 @@ const LENGTH_OPTIONS = [
 	{ value: "long", label: "Long (300–500 words)" },
 ];
 
+const MODEL_OPTIONS = [
+	{ value: "google/gemini-3-pro", label: "Gemini 3 Pro" },
+	{ value: "google/gemini-3-flash", label: "Gemini 3 Flash" },
+	{ value: "openai/gpt-5.2", label: "GPT-5.2" },
+	{ value: "anthropic/claude-4-5-sonnet", label: "Claude 4.5 Sonnet" },
+];
+
 interface Props {
 	profile: CreatorProfile;
 	address: string | undefined;
@@ -127,6 +133,7 @@ export function StudioContent({
 	const [customTopic, setCustomTopic] = useState("");
 	const [selectedTone, setSelectedTone] = useState("default");
 	const [selectedLength, setSelectedLength] = useState("medium");
+	const [selectedModel, setSelectedModel] = useState("google/gemini-3-pro");
 	const [generatedContent, setGeneratedContent] = useState("");
 
 	const epochs = useMemo(() => {
@@ -156,6 +163,8 @@ export function StudioContent({
 	const lengthLabel =
 		LENGTH_OPTIONS.find((l) => l.value === selectedLength)?.label ??
 		selectedLength;
+	const modelLabel =
+		MODEL_OPTIONS.find((m) => m.value === selectedModel)?.label ?? selectedModel;
 
 	function openDialog() {
 		setStep("options");
@@ -180,6 +189,7 @@ export function StudioContent({
 					topic: resolvedTopic === "random" ? undefined : resolvedTopic,
 					tone: selectedTone === "default" ? undefined : selectedTone,
 					length: selectedLength,
+					model: selectedModel,
 				},
 			});
 			if (error) throw error;
@@ -467,6 +477,26 @@ export function StudioContent({
 										</SelectContent>
 									</Select>
 								</div>
+
+								{/* Model */}
+								<div className="space-y-2">
+									<Label className="text-sm font-medium">LLM Model</Label>
+									<Select
+										value={selectedModel}
+										onValueChange={setSelectedModel}
+									>
+										<SelectTrigger className="border-border/40">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent className="bg-card border-border/40 z-50">
+											{MODEL_OPTIONS.map((m) => (
+												<SelectItem key={m.value} value={m.value}>
+													{m.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
 							</div>
 
 							<div className="flex justify-end pt-2">
@@ -520,6 +550,7 @@ export function StudioContent({
 								<ReviewRow label="Topic" value={topicLabel} />
 								<ReviewRow label="Tone" value={toneLabel} />
 								<ReviewRow label="Length" value={lengthLabel} />
+								<ReviewRow label="Model" value={modelLabel} />
 							</div>
 
 							<div className="flex items-center justify-between pt-2">

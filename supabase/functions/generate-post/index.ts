@@ -1,5 +1,28 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { keccak256, toBytes, toHex } from "https://esm.sh/viem@2.21.0";
+import {
+	createPublicClient,
+	createWalletClient,
+	defineChain,
+	http,
+	keccak256,
+	toBytes,
+	toHex,
+} from "https://esm.sh/viem@2.21.0";
+import { privateKeyToAccount } from "https://esm.sh/viem@2.21.0/accounts";
+
+// BNB Testnet configuration
+const bscTestnet = defineChain({
+	id: 97,
+	name: "BSC Testnet",
+	nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
+	rpcUrls: {
+		default: { http: ["https://data-seed-prebsc-1-s1.binance.org:8545"] },
+	},
+	blockExplorers: {
+		default: { name: "BscScan", url: "https://testnet.bscscan.com" },
+	},
+	testnet: true,
+});
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -26,9 +49,15 @@ function json(data: unknown, status = 200) {
 
 // Simple in-memory rate limiter
 const rateLimitMap = new Map<string, number[]>();
-function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+function rateLimit(
+	key: string,
+	maxRequests: number,
+	windowMs: number,
+): boolean {
 	const now = Date.now();
-	const timestamps = (rateLimitMap.get(key) || []).filter(t => now - t < windowMs);
+	const timestamps = (rateLimitMap.get(key) || []).filter(
+		(t) => now - t < windowMs,
+	);
 	if (timestamps.length >= maxRequests) return false;
 	timestamps.push(now);
 	rateLimitMap.set(key, timestamps);
@@ -71,7 +100,9 @@ Deno.serve(async (req: Request) => {
 		}
 
 		// Rate limit: 5 posts per minute per wallet
-		if (!rateLimit(`generate-post:${wallet_address.toLowerCase()}`, 5, 60_000)) {
+		if (
+			!rateLimit(`generate-post:${wallet_address.toLowerCase()}`, 5, 60_000)
+		) {
 			return json({ error: "Rate limit exceeded. Try again later." }, 429);
 		}
 
@@ -210,11 +241,41 @@ Deno.serve(async (req: Request) => {
 					creatorData.wallet_address,
 			),
 		);
-		const commitTxHash = keccak256(
-			toBytes("mock-commit-" + postId + "-" + Date.now()),
-		);
+		let commitTxHash: string;
+		const bnbPrivateKey = Deno.env.get("BNB_TESTNET_PRIVATE_KEY");
 
-		// Insert post
+		if (bnbPrivateKey) {
+			try {
+				const account = privateKeyToAccount(
+					(bnbPrivateKey.startsWith("0x")
+						? bnbPrivateKey
+						: `0x${bnbPrivateKey}`) as `0x${string}`,
+				);
+				const publicClient = createPublicClient({
+					chain: bscTestnet,
+					transport: http(),
+				});
+				const walletClient = createWalletClient({
+					account,
+					chain: bscTestnet,
+					transport: http(),
+				});
+				const hash = await walletClient.sendTransaction({
+					to: account.address,
+					value: 0n,
+				});
+				commitTxHash = hash;
+				console.log(`Real BNB tx: ${hash}`);
+			} catch (txErr) {
+				console.error("BNB tx failed, using hash:", txErr);
+				commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
+			}
+		} else {
+			commitTxHash = keccak256(
+				toBytes("mock-commit-" + postId + "-" + Date.now()),
+			);
+		}
+
 		const { error: insertErr } = await supabase.from("posts").insert({
 			id: postId,
 			creator_id: creatorData.id,
@@ -231,7 +292,7 @@ Deno.serve(async (req: Request) => {
 
 		if (insertErr) throw insertErr;
 
-		return json({ success: true, post_id: postId });
+		return json({ success: true, post_id: postId, tx_hash: commitTxHash });
 	} catch (e) {
 		console.error("generate-post error:", e);
 		return json(

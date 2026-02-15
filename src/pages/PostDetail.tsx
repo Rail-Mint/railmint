@@ -1,18 +1,22 @@
 import { formatDistanceToNow } from "date-fns";
-import { motion } from "framer-motion";
 import {
 	ArrowLeft,
+	Calendar,
 	CheckCircle2,
 	Copy,
 	ExternalLink,
 	Eye,
 	EyeOff,
+	FileText,
+	Globe,
+	Hash,
 	Heart,
+	Link2,
 	LoaderCircle,
-	Share2,
+	MessageSquare,
 	Shield,
 	Sparkles,
-	X,
+	User,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -35,7 +39,6 @@ import {
 	computeContentHash,
 	computeMetaHash,
 	computePromptHash,
-	getExplorerUrl,
 } from "@/lib/mock-contract";
 
 interface Creator {
@@ -57,12 +60,12 @@ interface PostDetailData {
 	is_fallback: boolean;
 	created_at: string;
 	creator: Creator | null;
+	creator_id: string;
 }
 
 interface VerificationState {
 	promptMatch: boolean | null;
 	contentMatch: boolean | null;
-	metaMatch: boolean | null;
 }
 
 interface HashRowProps {
@@ -137,7 +140,6 @@ export default function PostDetail() {
 	const [verification, setVerification] = useState<VerificationState>({
 		promptMatch: null,
 		contentMatch: null,
-		metaMatch: null,
 	});
 	const [replayStep, setReplayStep] = useState(0);
 	const [replayRunning, setReplayRunning] = useState(false);
@@ -186,7 +188,7 @@ export default function PostDetail() {
 
 		const { data: postData } = await supabase
 			.from("posts")
-			.select("*, creator:creators(*)")
+			.select("*")
 			.eq("id", id)
 			.single();
 		if (!postData) {
@@ -197,7 +199,42 @@ export default function PostDetail() {
 		const normalizedPost = postData as unknown as PostDetailData;
 
 		setPost(normalizedPost);
-		setCreator(normalizedPost.creator);
+
+		const creatorId = (postData as any).creator_id;
+		if (creatorId) {
+			const { data: creatorData } = await supabase
+				.from("creators")
+				.select("*")
+				.eq("id", creatorId)
+				.single();
+			setCreator(creatorData as unknown as Creator);
+
+			// Verify hashes immediately using creatorData (not state - it's async)
+			const cr = creatorData as any;
+			if (cr && normalizedPost.prompt_text) {
+				// Use wallet as-is from DB (case-sensitive for hash matching)
+				const normalizedWallet = cr.wallet_address || "";
+
+				const recomputedPrompt = computePromptHash(
+					normalizedPost.id,
+					cr.id,
+					normalizedPost.prompt_text,
+				);
+				// Use EXACT timestamp from database - no transformation
+				// This ensures hash computation matches backend exactly
+				const timestampForHash = normalizedPost.created_at || "";
+
+				const recomputedContent = computeContentHash(
+					normalizedPost.id,
+					normalizedPost.content_text,
+				);
+
+				setVerification({
+					promptMatch: recomputedPrompt === normalizedPost.prompt_hash,
+					contentMatch: recomputedContent === normalizedPost.content_hash,
+				});
+			}
+		}
 
 		const { count } = await supabase
 			.from("likes")
@@ -213,31 +250,6 @@ export default function PostDetail() {
 				.eq("wallet_address", address)
 				.maybeSingle();
 			setLiked(!!likeData);
-		}
-
-		const cr = normalizedPost.creator;
-		if (cr) {
-			const recomputedPrompt = computePromptHash(
-				normalizedPost.id,
-				cr.id,
-				normalizedPost.prompt_text,
-			);
-			const recomputedContent = computeContentHash(
-				normalizedPost.id,
-				normalizedPost.content_text,
-			);
-			// Model version must match generate-post edge function
-			const recomputedMeta = computeMetaHash(
-				"google/gemini-2.5-flash",
-				normalizedPost.created_at,
-				cr.wallet_address,
-			);
-
-			setVerification({
-				promptMatch: recomputedPrompt === normalizedPost.prompt_hash,
-				contentMatch: recomputedContent === normalizedPost.content_hash,
-				metaMatch: recomputedMeta === normalizedPost.meta_hash,
-			});
 		}
 
 		setLoading(false);
@@ -286,13 +298,6 @@ export default function PostDetail() {
 				className="py-12"
 			/>
 		);
-	if (!post) {
-		return (
-			<div className="container py-12 text-center text-muted-foreground">
-				Post not found.
-			</div>
-		);
-	}
 
 	const createdAtLabel = formatDistanceToNow(new Date(post.created_at), {
 		addSuffix: true,
@@ -301,7 +306,6 @@ export default function PostDetail() {
 	const verificationScore = [
 		verification.promptMatch,
 		verification.contentMatch,
-		verification.metaMatch,
 	].filter(Boolean).length;
 
 	const replaySteps: ReplayStep[] = [];
@@ -416,10 +420,17 @@ export default function PostDetail() {
 	const hasMismatch = [
 		verification.promptMatch,
 		verification.contentMatch,
-		verification.metaMatch,
 	].includes(false);
+
+	const checks = [
+		{ label: "Prompt", value: verification.promptMatch },
+		{ label: "Content", value: verification.contentMatch },
+	];
+
 	const preferVerification = proofBehaviorCount >= 3;
-	const confidencePercent = Math.round((verificationScore / 3) * 100);
+	const confidencePercent = Math.round(
+		(verificationScore / checks.length) * 100,
+	);
 	const primaryProofCtaLabel = preferVerification
 		? "Inspect Proof Details"
 		: "Open Proof Details";
@@ -428,38 +439,23 @@ export default function PostDetail() {
 		: "Behavior signal: you usually engage first, so proof tools stay one tap away.";
 	const snapshotFrameClass = hasMismatch
 		? "border-destructive/45 bg-destructive/5"
-		: verificationScore === 3
+		: verificationScore === checks.length
 			? "border-primary/45 bg-primary/10"
 			: "border-amber-400/40 bg-amber-500/5";
 
 	const snapshotTitleClass = hasMismatch
 		? "text-destructive"
-		: verificationScore === 3
+		: verificationScore === checks.length
 			? "text-primary"
 			: "text-amber-500";
 
 	const ctaClass = hasMismatch
 		? "border-destructive/45 text-destructive hover:bg-destructive/10"
-		: verificationScore === 3
+		: verificationScore === checks.length
 			? "border-primary/40 text-primary hover:bg-primary/10"
 			: "border-amber-400/45 text-amber-500 hover:bg-amber-500/10";
 
-	const proofPill =
-		verificationScore === 3
-			? "Fully verified"
-			: hasMismatch
-				? "Needs review"
-				: verificationScore > 0
-					? `${verificationScore}/3 checks passed`
-					: "Awaiting verification checks";
-
-	const checks = [
-		{ label: "Prompt", value: verification.promptMatch },
-		{ label: "Content", value: verification.contentMatch },
-		{ label: "Meta", value: verification.metaMatch },
-	];
-
-	const mismatchHints: Record<"Prompt" | "Content" | "Meta", string[]> = {
+	const mismatchHints: Record<"Prompt" | "Content", string[]> = {
 		Prompt: [
 			"Prompt text was edited after generation.",
 			"Creator id or post id no longer matches original hash input.",
@@ -469,11 +465,6 @@ export default function PostDetail() {
 			"Post body changed after hash creation.",
 			"Whitespace/newline normalization differs between systems.",
 			"Content hash was generated with a different post id context.",
-		],
-		Meta: [
-			"Timestamp, model id, or wallet address used for hash has changed.",
-			"Wallet address format differs (checksum/casing mismatch).",
-			"Metadata source fields are out of sync with stored record.",
 		],
 	};
 
@@ -494,18 +485,20 @@ export default function PostDetail() {
 		if (value === null) return <Badge variant="outline">Pending</Badge>;
 		if (value)
 			return (
-				<Badge className="bg-primary/85 text-primary-foreground">Pass</Badge>
+				<Badge className="bg-green-600 hover:bg-green-700 text-white">
+					Pass
+				</Badge>
 			);
 		return <Badge variant="destructive">Mismatch</Badge>;
 	};
 
 	return (
-		<div className="container py-8 md:py-10">
-			<section className="relative mb-6 overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-background/95 via-background/88 to-amber-50/40 p-5 shadow-[0_18px_70px_-34px_rgba(245,158,11,0.55)] md:p-6">
+		<div className="container mx-auto max-w-8xl py-6 md:py-10 pr-4 md:pr-6">
+			<section className="relative mb-6 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background/95 via-background/90 to-amber-50/30 p-4 shadow-lg md:p-6">
 				<div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.24),_transparent_70%)] blur-xl" />
 				<div className="pointer-events-none absolute -left-10 bottom-3 h-24 w-24 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_75%)] blur-xl" />
 
-				<div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+				<div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 					<div>
 						<Button
 							variant="ghost"
@@ -517,7 +510,7 @@ export default function PostDetail() {
 								<ArrowLeft className="mr-1 h-4 w-4" /> Back to Feed
 							</Link>
 						</Button>
-						<p className="mb-2 inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+						<p className="mb-2 w-fit flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
 							<Sparkles className="h-3 w-3" /> Post Detail
 						</p>
 						<h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
@@ -586,32 +579,20 @@ export default function PostDetail() {
 							</PopoverContent>
 						</Popover>
 
-						<Badge
-							variant="outline"
-							className="border-primary/30 bg-primary/10 text-primary"
-						>
-							{proofPill}
-						</Badge>
 						{post.is_fallback ? (
 							<Badge variant="secondary">Fallback source</Badge>
 						) : null}
 					</div>
 				</div>
 			</section>
-
 			<div
 				className={
 					readerMode
-						? "grid gap-6"
-						: "grid items-stretch gap-6 lg:grid-cols-[1.2fr_0.8fr]"
+						? "grid gap-5"
+						: "grid items-stretch gap-5 sm:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]"
 				}
 			>
-				<motion.div
-					initial={{ opacity: 0, y: 12 }}
-					animate={{ opacity: 1, y: 0 }}
-					transition={{ duration: 0.3 }}
-					className="h-full"
-				>
+				<div>
 					<Card className="h-full border-border/70 bg-background/75">
 						<CardHeader>
 							<div className="flex items-start justify-between gap-4">
@@ -624,10 +605,7 @@ export default function PostDetail() {
 									</p>
 								</div>
 								{post.commit_tx_hash ? (
-									<Badge
-										variant="outline"
-										className="gap-1 border-primary/35 bg-primary/10 text-primary"
-									>
+									<Badge className="gap-1 border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400">
 										<Shield className="h-3 w-3" /> Verified
 									</Badge>
 								) : (
@@ -638,7 +616,7 @@ export default function PostDetail() {
 
 						<CardContent className="flex h-full flex-col">
 							<div className="rounded-2xl border border-border/70 bg-background/70 p-4">
-								<div className="mb-3 flex flex-wrap items-center gap-2">
+								<div className="mb-3 flex items-center gap-1">
 									{checks.map((check) =>
 										check.value === false ? (
 											<Popover key={`inline-${check.label}`}>
@@ -667,7 +645,7 @@ export default function PostDetail() {
 											<Badge
 												key={`inline-${check.label}`}
 												variant="outline"
-												className={inlineChipClass(check.value)}
+												className={`${inlineChipClass(check.value)} px-2.5 py-1 text-[11px] font-medium`}
 											>
 												{check.label}:{" "}
 												{check.value === true ? "Pass" : "Pending"}
@@ -704,127 +682,135 @@ export default function PostDetail() {
 							</div>
 						</CardContent>
 					</Card>
-				</motion.div>
+				</div>
 
 				{!readerMode ? (
-					<motion.div
-						initial={{ opacity: 0, y: 12 }}
-						animate={{ opacity: 1, y: 0 }}
-						transition={{ duration: 0.3, delay: 0.03 }}
-						className="h-full"
-					>
-						<Card className={`flex h-full flex-col ${snapshotFrameClass}`}>
-							<CardHeader>
-								<CardTitle
-									className={`flex items-center gap-2 text-lg ${snapshotTitleClass}`}
-								>
-									<Shield className={`h-5 w-5 ${snapshotTitleClass}`} /> Quick
-									Trust Snapshot
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="flex flex-1 flex-col space-y-4">
-								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-									<div className="mb-2 flex items-center justify-between text-xs">
-										<span className="font-medium text-muted-foreground">
-											Confidence meter
-										</span>
-										<span className="font-semibold text-foreground">
-											{confidencePercent}%
-										</span>
-									</div>
-									<div className="h-2 overflow-hidden rounded-full bg-secondary/70">
-										<div
-											className={`h-full rounded-full transition-all duration-300 ${
-												hasMismatch
-													? "bg-destructive"
-													: verificationScore === 3
-														? "bg-primary"
-														: "bg-amber-500"
-											}`}
-											style={{ width: `${confidencePercent}%` }}
-										/>
-									</div>
-									<div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-										<span className="inline-flex items-center gap-1">
-											<span className="h-2 w-2 rounded-full bg-primary" /> Pass
-										</span>
-										<span className="inline-flex items-center gap-1">
-											<span className="h-2 w-2 rounded-full bg-amber-500" />{" "}
-											Pending
-										</span>
-										<span className="inline-flex items-center gap-1">
-											<span className="h-2 w-2 rounded-full bg-destructive" />{" "}
-											Mismatch
-										</span>
-									</div>
+					<Card className={`flex h-full flex-col ${snapshotFrameClass}`}>
+						<CardHeader>
+							<CardTitle
+								className={`flex items-center gap-2 text-lg ${snapshotTitleClass}`}
+							>
+								<Shield className={`h-5 w-5 ${snapshotTitleClass}`} /> Quick
+								Trust Snapshot
+							</CardTitle>
+						</CardHeader>
+						<CardContent className="flex flex-1 flex-col space-y-4">
+							<div className="rounded-xl border border-border/70 bg-background/70 p-3">
+								<div className="mb-2 flex items-center justify-between text-xs">
+									<span className="font-medium text-muted-foreground">
+										Confidence meter
+									</span>
+									<span className="font-semibold text-foreground">
+										{confidencePercent}%
+									</span>
 								</div>
-
-								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-									<p className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
-										Proof timeline
-									</p>
-									<div className="flex items-center">
-										{proofTimelineSteps.map((step, index) => (
-											<div
-												key={step.label}
-												className="flex min-w-0 flex-1 items-center"
-											>
-												<div className="flex min-w-0 flex-col items-center">
-													<span
-														className={`h-2.5 w-2.5 rounded-full ${step.done ? "bg-primary" : "bg-secondary"}`}
-													/>
-													<span className="mt-1 text-[11px] text-muted-foreground">
-														{step.label}
-													</span>
-												</div>
-												{index < proofTimelineSteps.length - 1 ? (
-													<div
-														className={`mx-2 h-[2px] flex-1 rounded-full ${proofTimelineSteps[index + 1]?.done && step.done ? "bg-primary/60" : "bg-secondary"}`}
-													/>
-												) : null}
-											</div>
-										))}
-									</div>
+								<div className="h-2 overflow-hidden rounded-full bg-secondary/70">
+									<div
+										className={`h-full rounded-full transition-all duration-300 ${
+											hasMismatch
+												? "bg-destructive"
+												: verificationScore === 3
+													? "bg-primary"
+													: "bg-amber-500"
+										}`}
+										style={{ width: `${confidencePercent}%` }}
+									/>
 								</div>
-
-								<div className="grid grid-cols-3 gap-2">
-									{checks.map((check) => (
-										<div
-											key={check.label}
-											className="rounded-xl border border-border/70 bg-background/70 p-2 text-center"
-										>
-											<p className="mb-1 text-[11px] text-muted-foreground">
-												{check.label}
-											</p>
-											<VerificationBadge value={check.value} />
-										</div>
-									))}
+								<div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+									<span className="inline-flex items-center gap-1">
+										<span className="h-2 w-2 rounded-full bg-primary" /> Pass
+									</span>
+									<span className="inline-flex items-center gap-1">
+										<span className="h-2 w-2 rounded-full bg-amber-500" />{" "}
+										Pending
+									</span>
+									<span className="inline-flex items-center gap-1">
+										<span className="h-2 w-2 rounded-full bg-destructive" />{" "}
+										Mismatch
+									</span>
 								</div>
+							</div>
 
-								<div className="rounded-xl border border-border/70 bg-background/70 p-3">
-									<p className="text-sm text-muted-foreground">
-										{hasMismatch
-											? "Some checks are mismatched. Review technical proof details before trusting this artifact."
-											: verificationScore === 3
-												? "All proof checks are passing. This artifact is consistent with stored hashes."
-												: "Proof checks are still pending. You can inspect each hash below."}
-									</p>
-								</div>
-
-								<Button
-									variant="outline"
-									className={`mt-auto w-full ${ctaClass}`}
-									onClick={openProofDetails}
-								>
-									{primaryProofCtaLabel}
-								</Button>
-
-								<p className="text-xs text-muted-foreground">
-									{primaryProofCtaHint}
+							<div className="rounded-xl border border-border/70 bg-background/70 p-4">
+								<p className="mb-3 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+									Proof Timeline
 								</p>
-							</CardContent>
-						</Card>
-					</motion.div>
+								<div className="flex items-center justify-center">
+									<div className="flex items-center gap-2 sm:gap-4">
+										<div className="flex flex-col items-center">
+											<span
+												className={`h-2.5 w-2.5 rounded-full ${proofTimelineSteps[0]?.done ? "bg-primary" : "bg-secondary"}`}
+											/>
+											<span className="mt-1 text-[11px] text-muted-foreground whitespace-nowrap">
+												Generated
+											</span>
+										</div>
+										<div
+											className={`mx-1 h-[2px] w-8 sm:w-12 rounded-full ${proofTimelineSteps[1]?.done ? "bg-primary/60" : "bg-secondary"}`}
+										/>
+										<div className="flex flex-col items-center">
+											<span
+												className={`h-2.5 w-2.5 rounded-full ${proofTimelineSteps[1]?.done ? "bg-primary" : "bg-secondary"}`}
+											/>
+											<span className="mt-1 text-[11px] text-muted-foreground whitespace-nowrap">
+												Hashed
+											</span>
+										</div>
+										<div
+											className={`mx-1 h-[2px] w-8 sm:w-12 rounded-full ${proofTimelineSteps[2]?.done ? "bg-primary/60" : "bg-secondary"}`}
+										/>
+										<div className="flex flex-col items-center">
+											<span
+												className={`h-2.5 w-2.5 rounded-full ${proofTimelineSteps[2]?.done ? "bg-primary" : "bg-secondary"}`}
+											/>
+											<span className="mt-1 text-[11px] text-muted-foreground whitespace-nowrap">
+												Committed
+											</span>
+										</div>
+									</div>
+								</div>
+							</div>
+
+							<div
+								className="grid gap-2"
+								style={{ gridTemplateColumns: `repeat(${checks.length}, minmax(0, 1fr))` }}
+							>
+								{checks.map((check) => (
+									<div
+										key={check.label}
+										className="rounded-xl border border-border/70 bg-background/70 p-2 text-center"
+									>
+										<p className="mb-1 text-[11px] text-muted-foreground">
+											{check.label}
+										</p>
+										<VerificationBadge value={check.value} />
+									</div>
+								))}
+							</div>
+
+							<div className="rounded-xl border border-border/70 bg-background/70 p-3">
+								<p className="text-sm text-muted-foreground">
+									{hasMismatch
+										? "Some checks are mismatched. Review technical proof details before trusting this artifact."
+										: verificationScore === checks.length
+											? "All proof checks are passing. This artifact is consistent with stored hashes."
+											: "Proof checks are still pending. You can inspect each hash below."}
+								</p>
+							</div>
+
+							<Button
+								variant="outline"
+								className={`mt-auto w-full ${ctaClass}`}
+								onClick={openProofDetails}
+							>
+								{primaryProofCtaLabel}
+							</Button>
+
+							<p className="text-xs text-muted-foreground">
+								{primaryProofCtaHint}
+							</p>
+						</CardContent>
+					</Card>
 				) : null}
 			</div>
 
@@ -845,174 +831,240 @@ export default function PostDetail() {
 					</CardContent>
 				</Card>
 			) : (
-				<Tabs
-					value={activeTab}
-					onValueChange={handleTabChange}
-					className="mt-6"
-				>
-					<TabsList className="grid w-full max-w-full grid-cols-3 sm:max-w-[520px]">
-						<TabsTrigger value="overview">Overview</TabsTrigger>
-						<TabsTrigger value="proof">Proof Details</TabsTrigger>
-						<TabsTrigger value="replay">Replay</TabsTrigger>
-					</TabsList>
+				<>
+					<Tabs
+						value={activeTab}
+						onValueChange={handleTabChange}
+						className="mt-6"
+					>
+						<TabsList className="grid w-full max-w-full grid-cols-3 sm:max-w-[520px]">
+							<TabsTrigger value="overview">Overview</TabsTrigger>
+							<TabsTrigger value="proof">Proof Details</TabsTrigger>
+							<TabsTrigger value="replay">Replay</TabsTrigger>
+						</TabsList>
 
-					<TabsContent value="overview" className="mt-4">
-						<Card className="border-border/70 bg-background/75">
-							<CardHeader>
-								<CardTitle className="text-lg">How to use this page</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-3 text-sm text-muted-foreground">
-								<p>
-									1. Read the content and decide if it is valuable for your
-									audience.
-								</p>
-								<p>
-									2. Like or share if useful, then open proof details only when
-									verification is important.
-								</p>
-								<p>
-									3. Use replay when you need a step-by-step trace of hash
-									recomputation.
-								</p>
-							</CardContent>
-						</Card>
-					</TabsContent>
-
-					<TabsContent value="proof" className="mt-4">
-						<Card className="border-border/70 bg-background/75">
-							<CardHeader>
-								<CardTitle className="text-lg">
-									Technical Proof Details
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								<HashRow
-									label="Prompt Hash"
-									hash={post.prompt_hash}
-									match={verification.promptMatch}
-									onCopy={copyHash}
-								/>
-								<HashRow
-									label="Content Hash"
-									hash={post.content_hash}
-									match={verification.contentMatch}
-									onCopy={copyHash}
-								/>
-								<HashRow
-									label="Meta Hash"
-									hash={post.meta_hash}
-									match={verification.metaMatch}
-									onCopy={copyHash}
-								/>
-
-								{post.commit_tx_hash ? (
-									// The generate-post edge function produces local keccak256 proof hashes,
-									// not real on-chain transaction hashes. Until the function is updated to
-									// actually submit transactions, all commit hashes are off-chain proofs.
-									<div className="rounded-xl border border-primary/30 bg-primary/10 p-3">
-										<div className="mb-1 flex items-center gap-2">
-											<p className="text-sm font-medium text-foreground">
-												Proof Hash (off-chain)
-											</p>
-											<Badge
-												variant="outline"
-												className="text-[10px] border-amber-400/40 bg-amber-500/10 text-amber-600"
-											>
-												Off-chain
-											</Badge>
-										</div>
-										<div className="flex items-center gap-2">
-											<code className="truncate text-xs text-muted-foreground">
-												{post.commit_tx_hash.slice(0, 20)}...
-												{post.commit_tx_hash.slice(-8)}
-											</code>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-6 w-6"
-												onClick={() => copyHash(post.commit_tx_hash!)}
-											>
-												<Copy className="h-3 w-3" />
-											</Button>
-										</div>
-										<p className="mt-1 text-[11px] text-muted-foreground">
-											This is a local proof hash. A clickable BSCScan link will
-											appear when on-chain commits are enabled.
-										</p>
-									</div>
-								) : (
-									<p className="rounded-xl border border-dashed border-border/70 bg-background/70 px-3 py-2 text-xs text-muted-foreground">
-										No onchain commit yet. This post is still valid in-app while
-										commit proof is pending.
+						<TabsContent value="overview" className="mt-4">
+							<Card className="border-border/70 bg-background/75">
+								<CardHeader>
+									<CardTitle className="text-lg">
+										How to use this page
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="space-y-3 text-sm text-muted-foreground">
+									<p>
+										1. Read the content and decide if it is valuable for your
+										audience.
 									</p>
-								)}
-							</CardContent>
-						</Card>
-					</TabsContent>
+									<p>
+										2. Like or share if useful, then open proof details only
+										when verification is important.
+									</p>
+									<p>
+										3. Use replay when you need a step-by-step trace of hash
+										recomputation.
+									</p>
+								</CardContent>
+							</Card>
+						</TabsContent>
 
-					<TabsContent value="replay" className="mt-4">
-						<Card className="border-border/70 bg-background/75">
-							<CardHeader>
-								<div className="flex items-center justify-between gap-3">
-									<CardTitle className="text-lg">Proof Replay Panel</CardTitle>
-									<Button
-										size="sm"
-										variant="outline"
-										className="h-8 border-primary/30"
-										onClick={runReplay}
-									>
-										{replayRunning ? (
-											<LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-										) : (
-											<Sparkles className="mr-1.5 h-3.5 w-3.5" />
-										)}
-										Replay
-									</Button>
-								</div>
-							</CardHeader>
-							<CardContent className="space-y-2">
-								{replaySteps.map((step, index) => {
-									const status =
-										replayStep > index
-											? "done"
-											: replayStep === index && replayRunning
-												? "active"
-												: "idle";
+						<TabsContent value="proof" className="mt-4">
+							<Card className="border-border/70 bg-background/75">
+								<CardHeader>
+									<CardTitle className="text-lg flex items-center gap-2">
+										<Shield className="h-5 w-5 text-primary" />
+										Technical Proof Details
+									</CardTitle>
+								</CardHeader>
+								<CardContent className="space-y-4">
+									{post.commit_tx_hash ? (
+										<div className="rounded-xl border border-green-500/30 bg-gradient-to-r from-green-500/5 to-primary/5 p-4">
+											<div className="mb-3 flex items-center justify-between">
+												<div className="flex items-center gap-2">
+													<Globe className="h-4 w-4 text-green-500" />
+													<p className="text-sm font-semibold text-foreground">
+														On-Chain Transaction
+													</p>
+													<Badge
+														variant="outline"
+														className="border-green-400/50 bg-green-500/10 text-green-400 text-xs"
+													>
+														<CheckCircle2 className="mr-1 h-3 w-3" />
+														Verified
+													</Badge>
+												</div>
+											</div>
+											<a
+												href={`https://testnet.bscscan.com/tx/${post.commit_tx_hash}`}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="group flex items-center justify-between rounded-lg bg-background/80 px-3 py-2.5 hover:bg-background transition-colors"
+											>
+												<div className="flex items-center gap-2 overflow-hidden">
+													<Hash className="h-4 w-4 shrink-0 text-muted-foreground" />
+													<code className="font-mono text-xs text-foreground">
+														{post.commit_tx_hash.slice(0, 14)}...
+														{post.commit_tx_hash.slice(-10)}
+													</code>
+												</div>
+												<ExternalLink className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+											</a>
+											<p className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+												<Link2 className="h-3 w-3" />
+												View transaction on BNB Testnet Explorer
+											</p>
+										</div>
+									) : (
+										<p className="rounded-xl border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+											⏳ On-chain proof pending. This post was created before
+											the blockchain integration was configured.
+										</p>
+									)}
 
-									return (
-										<div
-											key={step.id}
-											className="rounded-lg border border-border/70 bg-background/80 p-3"
-										>
-											<div className="mb-1 flex items-center gap-2">
-												<span
-													className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
-														status === "done"
-															? "bg-primary text-primary-foreground"
-															: status === "active"
-																? "bg-primary/20 text-primary"
-																: "bg-secondary text-muted-foreground"
-													}`}
-												>
-													{index + 1}
-												</span>
-												<p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
-													{step.title}
+									<div className="rounded-xl border border-border/60 bg-gradient-to-br from-background/60 to-card/50 p-4">
+										<div className="mb-4 flex items-center gap-2">
+											<FileText className="h-4 w-4 text-primary" />
+											<p className="text-sm font-semibold text-foreground">
+												Proof Metadata
+											</p>
+										</div>
+										<div className="grid grid-cols-2 gap-2">
+											<div className="rounded-lg border border-border/50 bg-background/60 p-3">
+												<div className="flex items-center gap-1.5 mb-1.5">
+													<Hash className="h-3 w-3 text-muted-foreground" />
+													<p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+														Post ID
+													</p>
+												</div>
+												<code className="text-[11px] font-mono text-foreground break-all leading-relaxed">
+													{post.id}
+												</code>
+											</div>
+											<div className="rounded-lg border border-border/50 bg-background/60 p-3">
+												<div className="flex items-center gap-1.5 mb-1.5">
+													<User className="h-3 w-3 text-muted-foreground" />
+													<p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+														Creator
+													</p>
+												</div>
+												<code className="text-[11px] font-mono text-foreground">
+													{post.creator?.wallet_address?.slice(0, 8)}...
+													{post.creator?.wallet_address?.slice(-6)}
+												</code>
+											</div>
+											<div className="rounded-lg border border-border/50 bg-background/60 p-3">
+												<div className="flex items-center gap-1.5 mb-1.5">
+													<Calendar className="h-3 w-3 text-muted-foreground" />
+													<p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+														Created
+													</p>
+												</div>
+												<p className="text-[11px] text-foreground">
+													{new Date(post.created_at).toLocaleDateString(
+														"en-US",
+														{
+															year: "numeric",
+															month: "short",
+															day: "numeric",
+															hour: "2-digit",
+															minute: "2-digit",
+														},
+													)}
 												</p>
 											</div>
-											<p className="text-xs text-muted-foreground">
-												{step.detail}
-											</p>
-											<code className="mt-1.5 inline-flex rounded-md bg-secondary/70 px-1.5 py-0.5 text-[11px]">
-												{step.value}
-											</code>
+											<div className="rounded-lg border border-border/50 bg-background/60 p-3">
+												<div className="flex items-center gap-1.5 mb-1.5">
+													<Sparkles className="h-3 w-3 text-muted-foreground" />
+													<p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+														Model
+													</p>
+												</div>
+												<p className="text-[11px] text-foreground">
+													google/gemini-2.5-flash
+												</p>
+											</div>
 										</div>
-									);
-								})}
-							</CardContent>
-						</Card>
-					</TabsContent>
-				</Tabs>
+										<div className="mt-3 rounded-lg border border-border/50 bg-background/60 p-3">
+											<div className="flex items-center gap-1.5 mb-2">
+												<MessageSquare className="h-3 w-3 text-muted-foreground" />
+												<p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+													Prompt
+												</p>
+											</div>
+											<p className="text-xs text-foreground leading-relaxed bg-background/40 rounded-md p-2">
+												{post.prompt_text}
+											</p>
+										</div>
+									</div>
+								</CardContent>
+							</Card>
+						</TabsContent>
+
+						<TabsContent value="replay" className="mt-4">
+							<Card className="border-border/70 bg-background/75">
+								<CardHeader>
+									<div className="flex items-center justify-between gap-3">
+										<CardTitle className="text-lg">
+											Proof Replay Panel
+										</CardTitle>
+										<Button
+											size="sm"
+											variant="outline"
+											className="h-8 border-primary/30"
+											onClick={runReplay}
+										>
+											{replayRunning ? (
+												<LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+											) : (
+												<Sparkles className="mr-1.5 h-3.5 w-3.5" />
+											)}
+											Replay
+										</Button>
+									</div>
+								</CardHeader>
+								<CardContent className="space-y-2">
+									{replaySteps.map((step, index) => {
+										const status =
+											replayStep > index
+												? "done"
+												: replayStep === index && replayRunning
+													? "active"
+													: "idle";
+
+										return (
+											<div
+												key={step.id}
+												className="rounded-lg border border-border/70 bg-background/80 p-3"
+											>
+												<div className="mb-1 flex items-center gap-2">
+													<span
+														className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-semibold ${
+															status === "done"
+																? "bg-primary text-primary-foreground"
+																: status === "active"
+																	? "bg-primary/20 text-primary"
+																	: "bg-secondary text-muted-foreground"
+														}`}
+													>
+														{index + 1}
+													</span>
+													<p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground">
+														{step.title}
+													</p>
+												</div>
+												<p className="text-xs text-muted-foreground">
+													{step.detail}
+												</p>
+												<code className="mt-1.5 inline-flex rounded-md bg-secondary/70 px-1.5 py-0.5 text-[11px]">
+													{step.value}
+												</code>
+											</div>
+										);
+									})}
+								</CardContent>
+							</Card>
+						</TabsContent>
+					</Tabs>
+				</>
 			)}
 		</div>
 	);

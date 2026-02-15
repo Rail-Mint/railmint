@@ -9,17 +9,17 @@ import {
 	Star,
 	Trophy,
 } from "lucide-react";
-import { Fragment } from "react";
+import { Fragment, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAccount } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 
-const stats = [
-	{ label: "Creator Clones", value: "5+", icon: Bot },
-	{ label: "Posts Generated", value: "20+", icon: Sparkles },
-	{ label: "Community Likes", value: "50+", icon: Heart },
-];
+type LandingStats = {
+	creators: number;
+	posts: number;
+	likes: number;
+};
 
 const steps = [
 	{
@@ -51,6 +51,29 @@ const steps = [
 export default function LandingPage() {
 	const { isConnected } = useAccount();
 	const prefersReducedMotion = useReducedMotion();
+	const [landingStats] = useState<LandingStats>({
+		creators: 100,
+		posts: 50,
+		likes: 500,
+	});
+
+	const stats = [
+		{
+			label: "Creator Clones",
+			value: `${landingStats.creators}+`,
+			icon: Bot,
+		},
+		{
+			label: "Posts Generated",
+			value: `${landingStats.posts}+`,
+			icon: Sparkles,
+		},
+		{
+			label: "Community Likes",
+			value: `${landingStats.likes}+`,
+			icon: Heart,
+		},
+	];
 
 	const fadeUp = {
 		hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 28 },
