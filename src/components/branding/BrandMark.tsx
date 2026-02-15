@@ -30,7 +30,9 @@ export function BrandMark({
 					src="/brand/railmindai-mark-master.png"
 					alt="RailMintAI logo"
 					className="h-full w-full object-contain"
-					loading="eager"
+				loading="lazy"
+					width={48}
+					height={48}
 					decoding="async"
 				/>
 			</div>
