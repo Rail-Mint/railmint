@@ -40,6 +40,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { useSignedAction } from "@/hooks/useSignedAction";
 
 interface Creator {
 	id: string;
@@ -132,6 +133,7 @@ export default function PostDetail() {
 	const { address } = useAccount();
 	const { toast } = useToast();
 	const { mode: contractMode } = useContractStatus();
+	const { invokeWithSignature } = useSignedAction();
 	const [post, setPost] = useState<PostDetailData | null>(null);
 	const [creator, setCreator] = useState<Creator | null>(null);
 	const [likeCount, setLikeCount] = useState(0);
@@ -261,19 +263,18 @@ export default function PostDetail() {
 			return;
 		}
 
-		if (liked) {
-			await supabase.functions.invoke("toggle-like", {
-				body: { wallet_address: address, post_id: id, action: "unlike" },
-			});
-			setLiked(false);
-			setLikeCount((count) => Math.max(0, count - 1));
-		} else {
-			const { error } = await supabase.functions.invoke("toggle-like", {
-				body: { wallet_address: address, post_id: id, action: "like" },
-			});
-			if (error) return;
-			setLiked(true);
-			setLikeCount((count) => count + 1);
+		try {
+			if (liked) {
+				await invokeWithSignature("toggle-like", { post_id: id, action: "unlike" }, address);
+				setLiked(false);
+				setLikeCount((count) => Math.max(0, count - 1));
+			} else {
+				await invokeWithSignature("toggle-like", { post_id: id, action: "like" }, address);
+				setLiked(true);
+				setLikeCount((count) => count + 1);
+			}
+		} catch (err) {
+			toast({ title: "Like failed", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
 		}
 	}
 

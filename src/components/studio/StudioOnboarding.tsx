@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { keccak256, toHex } from "viem";
 import { z } from "zod";
+import { useSignedAction } from "@/hooks/useSignedAction";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -56,6 +57,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
   const { toast } = useToast();
   const { mode: contractMode } = useContractStatus();
   const { registerCreator, isDeployed: contractsDeployed } = useRegisterCreator();
+  const { invokeWithSignature } = useSignedAction();
 
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
@@ -174,47 +176,38 @@ export function StudioOnboarding({ address, onComplete }: Props) {
         }
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("upsert-creator", {
-        body: {
-          wallet_address: address,
-          x_handle: handle,
-          clone_name: values.clone_name.trim(),
-          persona_text: values.persona_text.trim(),
-          prompt_template: values.prompt_template.trim(),
-        },
-      });
-      const error = fnError || (data?.error ? { message: data.error } : null);
-
-      if (error) {
-        // Handle any race-condition duplicates at DB level
-        if (error.message.includes("duplicate") || error.code === "23505") {
-          const msg = error.message.toLowerCase();
-          if (msg.includes("x_handle")) {
-            toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
-          } else if (msg.includes("wallet_address")) {
-            toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
-            onComplete();
-            return;
-          } else if (msg.includes("clone_name")) {
-            toast({ title: "Name conflict", description: "This clone name was just taken. Go back and choose another.", variant: "destructive" });
-          } else {
-            toast({ title: "Conflict detected", description: "A duplicate record exists. Please check your handle and clone name.", variant: "destructive" });
-          }
-          setStep(1);
-          setSaving(false);
-          return;
-        }
-        throw error;
-      }
+      const data = await invokeWithSignature("upsert-creator", {
+        x_handle: handle,
+        clone_name: values.clone_name.trim(),
+        persona_text: values.persona_text.trim(),
+        prompt_template: values.prompt_template.trim(),
+      }, address);
 
       toast({ title: "Clone created!", description: `${values.clone_name} is ready.` });
       setStep(4);
     } catch (err: any) {
+      const msg = (err.message || "").toLowerCase();
+      if (msg.includes("duplicate") || msg.includes("already registered") || msg.includes("already taken")) {
+        if (msg.includes("handle")) {
+          toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
+        } else if (msg.includes("wallet")) {
+          toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+          onComplete();
+          return;
+        } else if (msg.includes("clone") || msg.includes("name")) {
+          toast({ title: "Name conflict", description: "This clone name was just taken. Go back and choose another.", variant: "destructive" });
+        } else {
+          toast({ title: "Conflict detected", description: "A duplicate record exists. Please check your handle and clone name.", variant: "destructive" });
+        }
+        setStep(1);
+        setSaving(false);
+        return;
+      }
       toast({ title: "Creation failed", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
-  }, [form, address, contractsDeployed, registerCreator, toast, onComplete]);
+  }, [form, address, contractsDeployed, registerCreator, toast, onComplete, invokeWithSignature]);
 
   const steps = [
     { id: 1, label: "Identity" },

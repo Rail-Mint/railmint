@@ -7,6 +7,7 @@ import {
 	keccak256,
 	toBytes,
 	toHex,
+	verifyMessage,
 } from "https://esm.sh/viem@2.21.0";
 import { privateKeyToAccount } from "https://esm.sh/viem@2.21.0/accounts";
 
@@ -70,17 +71,37 @@ Deno.serve(async (req: Request) => {
 
 	try {
 		const body = await req.json();
-		const wallet_address = String(body.wallet_address || "").trim();
+		const wallet_address_raw = String(body.wallet_address || "").trim();
+		const signature = String(body.signature || "").trim();
+		const sign_timestamp = Number(body.sign_timestamp || 0);
+
+		// --- Wallet signature verification ---
+		if (!WALLET_RE.test(wallet_address_raw)) {
+			return json({ error: "Invalid wallet address format" }, 400);
+		}
+		if (!signature || !sign_timestamp) {
+			return json({ error: "Missing signature. Please sign the action with your wallet." }, 401);
+		}
+		if (Math.abs(Date.now() - sign_timestamp) > 300_000) {
+			return json({ error: "Signature expired. Please try again." }, 401);
+		}
+
+		const sigMessage = `RailMintAI Action\nFunction: generate-post\nWallet: ${wallet_address_raw}\nTimestamp: ${sign_timestamp}`;
+		const sigValid = await verifyMessage({
+			address: wallet_address_raw as `0x${string}`,
+			message: sigMessage,
+			signature: signature as `0x${string}`,
+		});
+		if (!sigValid) {
+			return json({ error: "Invalid wallet signature. Action rejected." }, 401);
+		}
+
+		const wallet_address = wallet_address_raw;
 		const requestedTopic = body.topic
 			? String(body.topic).trim().slice(0, 500)
 			: undefined;
 		const tone = body.tone ? String(body.tone).trim() : undefined;
 		const length = body.length ? String(body.length).trim() : "medium";
-
-		// --- Input validation ---
-		if (!WALLET_RE.test(wallet_address)) {
-			return json({ error: "Invalid wallet address format" }, 400);
-		}
 		if (tone && !VALID_TONES.includes(tone)) {
 			return json(
 				{ error: `Invalid tone. Must be one of: ${VALID_TONES.join(", ")}` },
