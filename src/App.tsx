@@ -29,7 +29,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const queryClient = new QueryClient();
 
 const RouteFallback = () => (
-	<div className="container py-8">
+	<div className="flex min-h-screen items-center justify-center">
 		<InlineLoader label="Loading page..." />
 	</div>
 );

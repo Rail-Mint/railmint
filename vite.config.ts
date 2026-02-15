@@ -1,5 +1,4 @@
 import react from "@vitejs/plugin-react-swc";
-import { componentTagger } from "lovable-tagger";
 import path from "path";
 import { defineConfig } from "vite";
 
@@ -12,9 +11,7 @@ export default defineConfig(({ mode }) => ({
 			overlay: false,
 		},
 	},
-	plugins: [react(), mode === "development" && componentTagger()].filter(
-		Boolean,
-	),
+	plugins: [react()],
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
@@ -22,6 +19,8 @@ export default defineConfig(({ mode }) => ({
 		dedupe: ["react", "react-dom"],
 	},
 	build: {
+		target: "esnext",
+		minify: "esbuild",
 		chunkSizeWarningLimit: 1700,
 		rollupOptions: {
 			output: {
@@ -110,5 +109,8 @@ export default defineConfig(({ mode }) => ({
 				},
 			},
 		},
+	},
+	optimizeDeps: {
+		include: ["react", "react-dom", "react-router-dom"],
 	},
 }));
