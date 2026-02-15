@@ -567,7 +567,10 @@ Deno.serve(async (req: Request) => {
 				throw new Error("Creator not found for publish command");
 			}
 
-			const publishContent = parsed.publishContent || processingText;
+		const publishContent = parsed.publishContent || processingText;
+		if (publishContent.length > 5000) {
+			throw new Error("Content exceeds maximum length of 5000 characters");
+		}
 			const { postId, analysis } = await createPostFromMention({
 				supabase,
 				creatorId: creator.id,
@@ -732,7 +735,7 @@ Deno.serve(async (req: Request) => {
 			{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
 		);
 	} catch (error) {
-		console.error("process-mention error:", error);
+		console.error("process-mention error:", error instanceof Error ? error.message : "unknown");
 
 		try {
 			if (mentionIdForFailure) {
