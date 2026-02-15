@@ -15,6 +15,17 @@ function json(data: unknown, status = 200) {
 	});
 }
 
+// Simple in-memory rate limiter
+const rateLimitMap = new Map<string, number[]>();
+function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+	const now = Date.now();
+	const timestamps = (rateLimitMap.get(key) || []).filter(t => now - t < windowMs);
+	if (timestamps.length >= maxRequests) return false;
+	timestamps.push(now);
+	rateLimitMap.set(key, timestamps);
+	return true;
+}
+
 function isServiceRole(req: Request): boolean {
 	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 	if (!serviceRoleKey) return false;
@@ -43,6 +54,11 @@ Deno.serve(async (req: Request) => {
 		// --- Authorization: service role or admin check ---
 		if (!isServiceRole(req)) {
 			return json({ error: "Unauthorized: admin access required" }, 403);
+		}
+
+		// Rate limit: 3 close-epoch calls per minute
+		if (!rateLimit("close-epoch", 3, 60_000)) {
+			return json({ error: "Rate limit exceeded. Try again later." }, 429);
 		}
 
 		const supabase = createClient(
