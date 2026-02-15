@@ -26,12 +26,30 @@ function rateLimit(key: string, maxRequests: number, windowMs: number): boolean 
 	return true;
 }
 
-function isServiceRole(req: Request): boolean {
+async function requireAdmin(req: Request, supabase: any): Promise<string> {
 	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-	if (!serviceRoleKey) return false;
 	const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
 	const apikey = req.headers.get("apikey")?.trim();
-	return auth === serviceRoleKey || apikey === serviceRoleKey;
+
+	// Allow service_role for system/cron operations
+	if (serviceRoleKey && (auth === serviceRoleKey || apikey === serviceRoleKey)) {
+		return "system";
+	}
+
+	// For user operations, validate JWT and check admin role
+	if (!auth) throw new Error("Unauthorized");
+	const { data: { user }, error } = await supabase.auth.getUser(auth);
+	if (error || !user) throw new Error("Unauthorized");
+
+	const { data: roles } = await supabase
+		.from("user_roles")
+		.select("role")
+		.eq("user_id", user.id)
+		.eq("role", "admin")
+		.single();
+
+	if (!roles) throw new Error("Admin access required");
+	return user.id;
 }
 
 Deno.serve(async (req: Request) => {
@@ -51,20 +69,23 @@ Deno.serve(async (req: Request) => {
 			return json({ error: "Invalid wallet address format" }, 400);
 		}
 
-		// --- Authorization: service role or admin check ---
-		if (!isServiceRole(req)) {
-			return json({ error: "Unauthorized: admin access required" }, 403);
-		}
-
-		// Rate limit: 3 close-epoch calls per minute
-		if (!rateLimit("close-epoch", 3, 60_000)) {
-			return json({ error: "Rate limit exceeded. Try again later." }, 429);
-		}
-
 		const supabase = createClient(
 			Deno.env.get("SUPABASE_URL")!,
 			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 		);
+
+		// --- Authorization: service role or admin role ---
+		let adminId: string;
+		try {
+			adminId = await requireAdmin(req, supabase);
+		} catch (e) {
+			return json({ error: e instanceof Error ? e.message : "Unauthorized" }, 403);
+		}
+
+		// Rate limit: 3 close-epoch calls per minute per admin
+		if (!rateLimit(`close-epoch:${adminId}`, 3, 60_000)) {
+			return json({ error: "Rate limit exceeded. Try again later." }, 429);
+		}
 
 		// Update epoch status
 		const { error: updateErr } = await supabase
