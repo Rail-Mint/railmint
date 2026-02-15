@@ -216,32 +216,21 @@ export function StudioContent({
 		setDialogOpen(false);
 		setGenerating(true);
 		try {
-			const { data: epochData } = await supabase
-				.from("epochs")
-				.select("id")
-				.eq("status", "active")
-				.single();
-
-			const currentEpochId = epochData?.id || 1;
-
 			const isHtmlContent =
 				generatedContent.includes("<") && generatedContent.includes(">");
 			const plainText = isHtmlContent
 				? generatedContent.replace(/<[^>]*>/g, "").trim()
 				: generatedContent.trim();
 
-			const { error: insertError } = await supabase.from("posts").insert({
-				creator_id: profile.id,
-				prompt_text: "Manual post from Studio",
-				content_text: plainText,
-				content_html: isHtmlContent ? generatedContent : "",
-				epoch_id: currentEpochId,
-				prompt_hash: "manual",
-				content_hash: "manual",
-				meta_hash: "manual",
-				is_fallback: false,
-			} as any);
-			if (insertError) throw insertError;
+			const { data, error } = await supabase.functions.invoke("create-post", {
+				body: {
+					wallet_address: address,
+					content_text: plainText,
+					content_html: isHtmlContent ? generatedContent : "",
+				},
+			});
+			if (error) throw error;
+			if (data?.error) throw new Error(data.error);
 
 			const { data: posts } = await supabase
 				.from("posts")

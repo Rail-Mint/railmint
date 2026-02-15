@@ -250,17 +250,15 @@ export default function PostDetail() {
 		}
 
 		if (liked) {
-			await supabase
-				.from("likes")
-				.delete()
-				.eq("post_id", id)
-				.eq("wallet_address", address);
+			await supabase.functions.invoke("toggle-like", {
+				body: { wallet_address: address, post_id: id, action: "unlike" },
+			});
 			setLiked(false);
 			setLikeCount((count) => Math.max(0, count - 1));
 		} else {
-			const { error } = await supabase
-				.from("likes")
-				.insert({ post_id: id, wallet_address: address });
+			const { error } = await supabase.functions.invoke("toggle-like", {
+				body: { wallet_address: address, post_id: id, action: "like" },
+			});
 			if (error) return;
 			setLiked(true);
 			setLikeCount((count) => count + 1);
