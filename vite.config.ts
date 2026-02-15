@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => ({
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
+			events: "events",
 		},
 		dedupe: ["react", "react-dom", "react/jsx-runtime", "@metamask/sdk"],
 	},
@@ -111,6 +112,6 @@ export default defineConfig(({ mode }) => ({
 		},
 	},
 	optimizeDeps: {
-		include: ["react", "react-dom", "react-router-dom"],
+		include: ["react", "react-dom", "react-router-dom", "events"],
 	},
 }));
