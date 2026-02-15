@@ -6,14 +6,44 @@ const corsHeaders = {
 		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
+
+function json(data: unknown, status = 200) {
+	return new Response(JSON.stringify(data), {
+		status,
+		headers: { ...corsHeaders, "Content-Type": "application/json" },
+	});
+}
+
+function isServiceRole(req: Request): boolean {
+	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+	if (!serviceRoleKey) return false;
+	const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
+	const apikey = req.headers.get("apikey")?.trim();
+	return auth === serviceRoleKey || apikey === serviceRoleKey;
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
 	try {
-		const { epoch_id, wallet_address } = await req.json();
-		if (!epoch_id || !wallet_address)
-			throw new Error("epoch_id and wallet_address required");
+		const body = await req.json();
+		const epoch_id = body.epoch_id;
+		const wallet_address = String(body.wallet_address || "").trim();
+
+		// --- Input validation ---
+		if (!epoch_id || !Number.isFinite(Number(epoch_id)) || Number(epoch_id) < 1) {
+			return json({ error: "Valid epoch_id is required" }, 400);
+		}
+		if (!WALLET_RE.test(wallet_address)) {
+			return json({ error: "Invalid wallet address format" }, 400);
+		}
+
+		// --- Authorization: service role or admin check ---
+		if (!isServiceRole(req)) {
+			return json({ error: "Unauthorized: admin access required" }, 403);
+		}
 
 		const supabase = createClient(
 			Deno.env.get("SUPABASE_URL")!,
@@ -29,22 +59,14 @@ Deno.serve(async (req: Request) => {
 
 		if (updateErr) throw updateErr;
 
-		// Get all posts for this epoch (only columns that exist)
+		// Get all posts for this epoch
 		const { data: posts } = await supabase
 			.from("posts")
 			.select("id, creator_id")
 			.eq("epoch_id", epoch_id);
 
 		if (!posts || posts.length === 0) {
-			return new Response(
-				JSON.stringify({
-					success: true,
-					message: "Epoch closed, no posts to rank",
-				}),
-				{
-					headers: { ...corsHeaders, "Content-Type": "application/json" },
-				},
-			);
+			return json({ success: true, message: "Epoch closed, no posts to rank" });
 		}
 
 		// Get likes for these posts
@@ -64,13 +86,11 @@ Deno.serve(async (req: Request) => {
 		// Aggregate likes per creator
 		const creatorLikes: Record<string, number> = {};
 		for (const p of posts as any[]) {
-			if (!creatorLikes[p.creator_id]) {
-				creatorLikes[p.creator_id] = 0;
-			}
+			if (!creatorLikes[p.creator_id]) creatorLikes[p.creator_id] = 0;
 			creatorLikes[p.creator_id] += likesByPost[p.id] || 0;
 		}
 
-		// Rank by like count (descending)
+		// Rank by like count
 		const ranked = Object.entries(creatorLikes)
 			.map(([creator_id, like_count]) => ({ creator_id, like_count }))
 			.sort((a, b) => b.like_count - a.like_count)
@@ -100,19 +120,9 @@ Deno.serve(async (req: Request) => {
 			await supabase.from("epoch_rewards").insert(ranked);
 		}
 
-		return new Response(JSON.stringify({ success: true, rankings: ranked }), {
-			headers: { ...corsHeaders, "Content-Type": "application/json" },
-		});
+		return json({ success: true, rankings: ranked });
 	} catch (e) {
 		console.error("close-epoch error:", e);
-		return new Response(
-			JSON.stringify({
-				error: e instanceof Error ? e.message : "Unknown error",
-			}),
-			{
-				status: 400,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
-		);
+		return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
 	}
 });

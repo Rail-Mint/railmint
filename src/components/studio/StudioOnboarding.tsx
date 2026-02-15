@@ -174,13 +174,16 @@ export function StudioOnboarding({ address, onComplete }: Props) {
         }
       }
 
-      const { error } = await supabase.from("creators").insert({
-        wallet_address: address,
-        x_handle: handle,
-        clone_name: values.clone_name.trim(),
-        persona_text: values.persona_text.trim(),
-        prompt_template: values.prompt_template.trim(),
+      const { data, error: fnError } = await supabase.functions.invoke("upsert-creator", {
+        body: {
+          wallet_address: address,
+          x_handle: handle,
+          clone_name: values.clone_name.trim(),
+          persona_text: values.persona_text.trim(),
+          prompt_template: values.prompt_template.trim(),
+        },
       });
+      const error = fnError || (data?.error ? { message: data.error } : null);
 
       if (error) {
         // Handle any race-condition duplicates at DB level

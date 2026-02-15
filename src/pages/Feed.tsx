@@ -199,12 +199,10 @@ export default function Feed() {
 		}
 
 		if (liked) {
-			// Unlike - only remove from Supabase (no blockchain unlike)
-			await supabase
-				.from("likes")
-				.delete()
-				.eq("post_id", postId)
-				.eq("wallet_address", address);
+			// Unlike via edge function
+			await supabase.functions.invoke("toggle-like", {
+				body: { wallet_address: address, post_id: postId, action: "unlike" },
+			});
 
 			setPosts((prev) =>
 				prev.map((post) =>
@@ -218,17 +216,16 @@ export default function Feed() {
 				),
 			);
 		} else {
-			// Like - Supabase primary, on-chain secondary (if deployed)
+			// Like via edge function
 			try {
 				const post = posts.find((p) => p.id === postId);
 				if (!post) return;
 
 				setLikingPostId(postId);
 
-				// Supabase is the primary data store
-				await supabase
-					.from("likes")
-					.insert({ post_id: postId, wallet_address: address });
+				await supabase.functions.invoke("toggle-like", {
+					body: { wallet_address: address, post_id: postId, action: "like" },
+				});
 
 				// On-chain like only if contracts are deployed (UUID cannot be BigInt)
 				// Skip on-chain call -- contract addresses are not configured yet

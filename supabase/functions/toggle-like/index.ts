@@ -1,0 +1,90 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function json(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const body = await req.json();
+    const wallet_address = String(body.wallet_address || "").trim();
+    const post_id = String(body.post_id || "").trim();
+    const action = String(body.action || "toggle").trim();
+
+    // --- Input validation ---
+    if (!WALLET_RE.test(wallet_address)) {
+      return json({ error: "Invalid wallet address format" }, 400);
+    }
+    if (!UUID_RE.test(post_id)) {
+      return json({ error: "Invalid post ID format" }, 400);
+    }
+    if (!["like", "unlike", "toggle"].includes(action)) {
+      return json({ error: "Invalid action. Use 'like', 'unlike', or 'toggle'" }, 400);
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+
+    // Check if post exists
+    const { data: post } = await supabase
+      .from("posts")
+      .select("id")
+      .eq("id", post_id)
+      .single();
+
+    if (!post) {
+      return json({ error: "Post not found" }, 404);
+    }
+
+    // Check existing like
+    const { data: existingLike } = await supabase
+      .from("likes")
+      .select("id")
+      .eq("post_id", post_id)
+      .eq("wallet_address", wallet_address)
+      .maybeSingle();
+
+    let liked: boolean;
+
+    if (action === "toggle") {
+      if (existingLike) {
+        await supabase.from("likes").delete().eq("id", existingLike.id);
+        liked = false;
+      } else {
+        await supabase.from("likes").insert({ post_id, wallet_address });
+        liked = true;
+      }
+    } else if (action === "like") {
+      if (!existingLike) {
+        await supabase.from("likes").insert({ post_id, wallet_address });
+      }
+      liked = true;
+    } else {
+      if (existingLike) {
+        await supabase.from("likes").delete().eq("id", existingLike.id);
+      }
+      liked = false;
+    }
+
+    return json({ success: true, liked });
+  } catch (e) {
+    console.error("toggle-like error:", e);
+    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
+  }
+});

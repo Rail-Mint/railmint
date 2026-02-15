@@ -640,16 +640,16 @@ export default function Onboarding() {
 			}
 
 			// Always save to Supabase as fallback/backup
-			const { error } = await supabase.from("creators").upsert(
-				{
+			const { data, error: fnError } = await supabase.functions.invoke("upsert-creator", {
+				body: {
 					wallet_address: address,
 					x_handle: handle,
 					clone_name: values.clone_name,
 					persona_text: values.persona_text,
 					prompt_template: values.prompt_template,
 				},
-				{ onConflict: "wallet_address" },
-			);
+			});
+			const error = fnError || (data?.error ? new Error(data.error) : null);
 
 			if (error) throw error;
 

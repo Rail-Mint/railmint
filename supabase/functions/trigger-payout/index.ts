@@ -7,24 +7,52 @@ const corsHeaders = {
 		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
+
+function json(data: unknown, status = 200) {
+	return new Response(JSON.stringify(data), {
+		status,
+		headers: { ...corsHeaders, "Content-Type": "application/json" },
+	});
+}
+
+function isServiceRole(req: Request): boolean {
+	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+	if (!serviceRoleKey) return false;
+	const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
+	const apikey = req.headers.get("apikey")?.trim();
+	return auth === serviceRoleKey || apikey === serviceRoleKey;
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
 	try {
-		const { epoch_id, wallet_address } = await req.json();
-		if (!epoch_id || !wallet_address)
-			throw new Error("epoch_id and wallet_address required");
+		const body = await req.json();
+		const epoch_id = body.epoch_id;
+		const wallet_address = String(body.wallet_address || "").trim();
+
+		// --- Input validation ---
+		if (!epoch_id || !Number.isFinite(Number(epoch_id)) || Number(epoch_id) < 1) {
+			return json({ error: "Valid epoch_id is required" }, 400);
+		}
+		if (!WALLET_RE.test(wallet_address)) {
+			return json({ error: "Invalid wallet address format" }, 400);
+		}
+
+		// --- Authorization ---
+		if (!isServiceRole(req)) {
+			return json({ error: "Unauthorized: admin access required" }, 403);
+		}
 
 		const supabase = createClient(
 			Deno.env.get("SUPABASE_URL")!,
 			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
 		);
 
-		// Generate mock payout tx hash using keccak256 for consistency
 		const txHash = keccak256(toBytes("mock-payout-" + epoch_id + "-" + Date.now()));
 
-		// Update epoch
 		const { error } = await supabase
 			.from("epochs")
 			.update({ status: "paid", payout_tx_hash: txHash })
@@ -33,19 +61,9 @@ Deno.serve(async (req: Request) => {
 
 		if (error) throw error;
 
-		return new Response(JSON.stringify({ success: true, tx_hash: txHash }), {
-			headers: { ...corsHeaders, "Content-Type": "application/json" },
-		});
+		return json({ success: true, tx_hash: txHash });
 	} catch (e) {
 		console.error("trigger-payout error:", e);
-		return new Response(
-			JSON.stringify({
-				error: e instanceof Error ? e.message : "Unknown error",
-			}),
-			{
-				status: 400,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
-		);
+		return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
 	}
 });
