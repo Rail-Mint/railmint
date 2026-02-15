@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { keccak256, toBytes } from "https://esm.sh/viem@2.21.0";
+import { keccak256, toBytes, verifyMessage } from "https://esm.sh/viem@2.21.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,19 +16,47 @@ function json(data: unknown, status = 200) {
   });
 }
 
+async function verifyWalletSignature(body: Record<string, unknown>, functionName: string): Promise<string> {
+  const wallet_address = String(body.wallet_address || "").trim();
+  const signature = String(body.signature || "").trim();
+  const sign_timestamp = Number(body.sign_timestamp || 0);
+
+  if (!WALLET_RE.test(wallet_address)) {
+    throw new Error("Invalid wallet address format");
+  }
+  if (!signature || !sign_timestamp) {
+    throw new Error("Missing signature. Please sign the action with your wallet.");
+  }
+  if (Math.abs(Date.now() - sign_timestamp) > 300_000) {
+    throw new Error("Signature expired. Please try again.");
+  }
+
+  const message = `RailMintAI Action\nFunction: ${functionName}\nWallet: ${wallet_address}\nTimestamp: ${sign_timestamp}`;
+
+  const valid = await verifyMessage({
+    address: wallet_address as `0x${string}`,
+    message,
+    signature: signature as `0x${string}`,
+  });
+
+  if (!valid) {
+    throw new Error("Invalid wallet signature. Action rejected.");
+  }
+
+  return wallet_address;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const body = await req.json();
-    const wallet_address = String(body.wallet_address || "").trim();
+
+    const wallet_address = await verifyWalletSignature(body, "create-post");
+
     const content_text = String(body.content_text || "").trim();
     const content_html = String(body.content_html || "").trim();
 
-    // --- Input validation ---
-    if (!WALLET_RE.test(wallet_address)) {
-      return json({ error: "Invalid wallet address format" }, 400);
-    }
     if (!content_text || content_text.length < 1 || content_text.length > 10000) {
       return json({ error: "Content text must be 1-10000 characters" }, 400);
     }
@@ -91,6 +119,6 @@ Deno.serve(async (req: Request) => {
     return json({ success: true, post_id: postId });
   } catch (e) {
     console.error("create-post error:", e);
-    return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
+    return json({ error: e instanceof Error ? e.message : "Operation failed" }, 400);
   }
 });

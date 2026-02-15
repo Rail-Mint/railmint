@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { verifyMessage } from "https://esm.sh/viem@2.21.0";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -27,17 +28,44 @@ function rateLimit(key: string, maxRequests: number, windowMs: number): boolean 
 	return true;
 }
 
+async function verifyWalletSignature(body: Record<string, unknown>, functionName: string): Promise<string> {
+	const wallet_address = String(body.wallet_address || "").trim();
+	const signature = String(body.signature || "").trim();
+	const sign_timestamp = Number(body.sign_timestamp || 0);
+
+	if (!WALLET_RE.test(wallet_address)) {
+		throw new Error("Invalid wallet address format");
+	}
+	if (!signature || !sign_timestamp) {
+		throw new Error("Missing signature. Please sign the action with your wallet.");
+	}
+	if (Math.abs(Date.now() - sign_timestamp) > 300_000) {
+		throw new Error("Signature expired. Please try again.");
+	}
+
+	const message = `RailMintAI Action\nFunction: ${functionName}\nWallet: ${wallet_address}\nTimestamp: ${sign_timestamp}`;
+
+	const valid = await verifyMessage({
+		address: wallet_address as `0x${string}`,
+		message,
+		signature: signature as `0x${string}`,
+	});
+
+	if (!valid) {
+		throw new Error("Invalid wallet signature. Action rejected.");
+	}
+
+	return wallet_address;
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
 	try {
 		const body = await req.json();
-		const wallet_address = String(body.wallet_address || "").trim();
 
-		if (!WALLET_RE.test(wallet_address)) {
-			return json({ error: "Invalid wallet address format" }, 400);
-		}
+		const wallet_address = await verifyWalletSignature(body, "update-profile");
 
 		// Rate limit: 10 updates per minute per wallet
 		if (!rateLimit(`update-profile:${wallet_address.toLowerCase()}`, 10, 60_000)) {
@@ -115,6 +143,6 @@ Deno.serve(async (req: Request) => {
 		return json({ success: true });
 	} catch (e) {
 		console.error("update-profile error:", e);
-		return json({ error: "An error occurred while updating profile" }, 500);
+		return json({ error: e instanceof Error ? e.message : "An error occurred while updating profile" }, 500);
 	}
 });

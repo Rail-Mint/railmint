@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import { keccak256, toHex } from "viem";
 import { useAccount, useDisconnect } from "wagmi";
 import { z } from "zod";
+import { useSignedAction } from "@/hooks/useSignedAction";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -200,6 +201,7 @@ export default function Onboarding() {
 	};
 	const { toast } = useToast();
 	const { mode: contractMode } = useContractStatus();
+	const { invokeWithSignature } = useSignedAction();
 	const {
 		registerCreator,
 		hash,
@@ -640,16 +642,13 @@ export default function Onboarding() {
 			}
 
 			// Always save to Supabase as fallback/backup
-			const { data, error: fnError } = await supabase.functions.invoke("upsert-creator", {
-				body: {
-					wallet_address: address,
-					x_handle: handle,
-					clone_name: values.clone_name,
-					persona_text: values.persona_text,
-					prompt_template: values.prompt_template,
-				},
-			});
-			const error = fnError || (data?.error ? new Error(data.error) : null);
+			const data = await invokeWithSignature("upsert-creator", {
+				x_handle: handle,
+				clone_name: values.clone_name,
+				persona_text: values.persona_text,
+				prompt_template: values.prompt_template,
+			}, address);
+			const error = data?.error ? new Error(data.error) : null;
 
 			if (error) throw error;
 

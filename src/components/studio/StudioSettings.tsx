@@ -17,6 +17,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { CreatorProfile } from "@/hooks/useStudioData";
+import { useSignedAction } from "@/hooks/useSignedAction";
 
 interface Props {
   densityCompact: boolean;
@@ -29,6 +30,7 @@ export function StudioSettings({ densityCompact, onDensityChange, profile, onPro
   const { theme, setTheme } = useTheme();
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [deactivating, setDeactivating] = useState(false);
+  const { invokeWithSignature } = useSignedAction();
 
   const isActive = profile?.is_active ?? true;
 
@@ -37,13 +39,10 @@ export function StudioSettings({ densityCompact, onDensityChange, profile, onPro
     setDeactivating(true);
     try {
       const newStatus = !isActive;
-      const { data: result, error } = await supabase.functions.invoke("update-profile", {
-        body: {
-          wallet_address: profile.wallet_address,
-          is_active: newStatus,
-        },
-      });
-      if (error || result?.error) throw new Error(result?.error || error?.message || "Update failed");
+      await invokeWithSignature("update-profile", {
+        is_active: newStatus,
+      }, profile.wallet_address);
+
       toast({
         title: newStatus ? "Clone Reactivated" : "Clone Deactivated",
         description: newStatus

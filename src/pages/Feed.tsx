@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { useSignedAction } from "@/hooks/useSignedAction";
 import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ export default function Feed() {
 	const { address } = useAccount();
 	const { toast } = useToast();
 	const navigate = useNavigate();
+	const { invokeWithSignature } = useSignedAction();
 
 	const [posts, setPosts] = useState<Post[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -197,10 +199,13 @@ export default function Feed() {
 		}
 
 		if (liked) {
-			// Unlike via edge function
-			await supabase.functions.invoke("toggle-like", {
-				body: { wallet_address: address, post_id: postId, action: "unlike" },
-			});
+			// Unlike via signed edge function
+			try {
+				await invokeWithSignature("toggle-like", { post_id: postId, action: "unlike" }, address);
+			} catch (err) {
+				toast({ title: "Unlike failed", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
+				return;
+			}
 
 			setPosts((prev) =>
 				prev.map((post) =>
@@ -214,16 +219,14 @@ export default function Feed() {
 				),
 			);
 		} else {
-			// Like via edge function
+			// Like via signed edge function
 			try {
 				const post = posts.find((p) => p.id === postId);
 				if (!post) return;
 
 				setLikingPostId(postId);
 
-				await supabase.functions.invoke("toggle-like", {
-					body: { wallet_address: address, post_id: postId, action: "like" },
-				});
+				await invokeWithSignature("toggle-like", { post_id: postId, action: "like" }, address);
 
 				// On-chain like only if contracts are deployed (UUID cannot be BigInt)
 				// Skip on-chain call -- contract addresses are not configured yet

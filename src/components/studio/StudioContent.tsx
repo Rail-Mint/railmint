@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { usePublishContent } from "@/hooks/useContentManager";
 import type { CreatorProfile, PostPreview } from "@/hooks/useStudioData";
 import { supabase } from "@/integrations/supabase/client";
+import { useSignedAction } from "@/hooks/useSignedAction";
 import {
 	CheckCircle2,
 	ChevronRight,
@@ -118,6 +119,7 @@ export function StudioContent({
 	onPostsUpdate,
 }: Props) {
 	const { toast } = useToast();
+	const { invokeWithSignature } = useSignedAction();
 	const {
 		publishContent,
 		isPending: isTxPending,
@@ -183,16 +185,12 @@ export function StudioContent({
 		if (!address || !profile) return;
 		setGenerating(true);
 		try {
-			const { data, error } = await supabase.functions.invoke("generate-post", {
-				body: {
-					wallet_address: address,
-					topic: resolvedTopic === "random" ? undefined : resolvedTopic,
-					tone: selectedTone === "default" ? undefined : selectedTone,
-					length: selectedLength,
-					model: selectedModel,
-				},
-			});
-			if (error) throw error;
+			const data = await invokeWithSignature("generate-post", {
+				topic: resolvedTopic === "random" ? undefined : resolvedTopic,
+				tone: selectedTone === "default" ? undefined : selectedTone,
+				length: selectedLength,
+				model: selectedModel,
+			}, address);
 			if (data?.error) throw new Error(data.error);
 
 			// Fetch the generated post from database
@@ -247,14 +245,10 @@ export function StudioContent({
 				? generatedContent.replace(/<[^>]*>/g, "").trim()
 				: generatedContent.trim();
 
-			const { data, error } = await supabase.functions.invoke("create-post", {
-				body: {
-					wallet_address: address,
-					content_text: plainText,
-					content_html: isHtmlContent ? generatedContent : "",
-				},
-			});
-			if (error) throw error;
+			const data = await invokeWithSignature("create-post", {
+				content_text: plainText,
+				content_html: isHtmlContent ? generatedContent : "",
+			}, address);
 			if (data?.error) throw new Error(data.error);
 
 			const { data: posts } = await supabase

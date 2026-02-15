@@ -218,6 +218,23 @@ Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
 
+	// Authenticate: require service_role key or a dedicated SYNC_API_KEY
+	const authorization = req.headers.get("authorization")?.trim();
+	const apikey = req.headers.get("apikey")?.trim();
+	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+	const syncApiKey = Deno.env.get("SYNC_API_KEY");
+	const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
+
+	const isServiceRole = serviceRoleKey && (authToken === serviceRoleKey || apikey === serviceRoleKey);
+	const isSyncKey = syncApiKey && (authToken === syncApiKey || apikey === syncApiKey);
+
+	if (!isServiceRole && !isSyncKey) {
+		return new Response(
+			JSON.stringify({ error: "Unauthorized. Provide a valid API key." }),
+			{ status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+		);
+	}
+
 	try {
 		const body = await req.json().catch(() => ({}));
 

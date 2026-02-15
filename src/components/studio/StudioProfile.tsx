@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { CreatorProfile } from "@/hooks/useStudioData";
 import { supabase } from "@/integrations/supabase/client";
+import { useSignedAction } from "@/hooks/useSignedAction";
 
 const profileSchema = z.object({
 	clone_name: z
@@ -47,6 +48,7 @@ interface Props {
 
 export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	const { toast } = useToast();
+	const { invokeWithSignature } = useSignedAction();
 	const [editing, setEditing] = useState(false);
 	const [verifyingX, setVerifyingX] = useState(false);
 	const [form, setForm] = useState({
@@ -84,36 +86,33 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		setErrors({});
 		setSaving(true);
 
-		const { data: result, error } = await supabase.functions.invoke("update-profile", {
-			body: {
-				wallet_address: profile.wallet_address,
+		try {
+			await invokeWithSignature("update-profile", {
 				clone_name: form.clone_name.trim(),
 				x_handle: form.x_handle.trim() || null,
 				persona_text: form.persona_text.trim(),
 				prompt_template: form.prompt_template.trim(),
-			},
-		});
+			}, profile.wallet_address);
 
-		setSaving(false);
-		if (error || result?.error) {
+			onProfileUpdate({
+				...profile,
+				clone_name: form.clone_name.trim(),
+				x_handle: form.x_handle.trim() || null,
+				persona_text: form.persona_text.trim(),
+				prompt_template: form.prompt_template.trim(),
+			});
+			setEditing(false);
+			toast({ title: "Profile saved" });
+		} catch (err: any) {
 			toast({
 				title: "Save failed",
-				description: result?.error || error?.message || "Unknown error",
+				description: err.message || "Unknown error",
 				variant: "destructive",
 			});
-			return;
+		} finally {
+			setSaving(false);
 		}
-
-		onProfileUpdate({
-			...profile,
-			clone_name: form.clone_name.trim(),
-			x_handle: form.x_handle.trim() || null,
-			persona_text: form.persona_text.trim(),
-			prompt_template: form.prompt_template.trim(),
-		});
-		setEditing(false);
-		toast({ title: "Profile saved" });
-	}, [form, profile, onProfileUpdate, toast]);
+	}, [form, profile, onProfileUpdate, toast, invokeWithSignature]);
 
 	const handleCancel = useCallback(() => {
 		if (profile) {
