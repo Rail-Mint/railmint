@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { keccak256, toHex, toBytes } from "https://esm.sh/viem@2.21.0";
+import { keccak256, toBytes, toHex } from "https://esm.sh/viem@2.21.0";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -8,7 +8,13 @@ const corsHeaders = {
 };
 
 const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
-const VALID_TONES = ["default", "educational", "casual", "professional", "hype"];
+const VALID_TONES = [
+	"default",
+	"educational",
+	"casual",
+	"professional",
+	"hype",
+];
 const VALID_LENGTHS = ["short", "medium", "long"];
 
 function json(data: unknown, status = 200) {
@@ -36,7 +42,9 @@ Deno.serve(async (req: Request) => {
 	try {
 		const body = await req.json();
 		const wallet_address = String(body.wallet_address || "").trim();
-		const requestedTopic = body.topic ? String(body.topic).trim().slice(0, 500) : undefined;
+		const requestedTopic = body.topic
+			? String(body.topic).trim().slice(0, 500)
+			: undefined;
 		const tone = body.tone ? String(body.tone).trim() : undefined;
 		const length = body.length ? String(body.length).trim() : "medium";
 
@@ -45,10 +53,18 @@ Deno.serve(async (req: Request) => {
 			return json({ error: "Invalid wallet address format" }, 400);
 		}
 		if (tone && !VALID_TONES.includes(tone)) {
-			return json({ error: `Invalid tone. Must be one of: ${VALID_TONES.join(", ")}` }, 400);
+			return json(
+				{ error: `Invalid tone. Must be one of: ${VALID_TONES.join(", ")}` },
+				400,
+			);
 		}
 		if (!VALID_LENGTHS.includes(length)) {
-			return json({ error: `Invalid length. Must be one of: ${VALID_LENGTHS.join(", ")}` }, 400);
+			return json(
+				{
+					error: `Invalid length. Must be one of: ${VALID_LENGTHS.join(", ")}`,
+				},
+				400,
+			);
 		}
 		if (requestedTopic && requestedTopic.length > 500) {
 			return json({ error: "Topic must be under 500 characters" }, 400);
@@ -98,15 +114,17 @@ Deno.serve(async (req: Request) => {
 			"BNB Chain security and audit best practices",
 			"BNB Chain governance and community proposals",
 		];
-		const topic = requestedTopic || defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
+		const topic =
+			requestedTopic ||
+			defaultTopics[Math.floor(Math.random() * defaultTopics.length)];
 
 		// Build word-count guidance
-		const lengthGuide = length === "short" ? "80-150" : length === "long" ? "300-500" : "150-300";
+		const lengthGuide =
+			length === "short" ? "80-150" : length === "long" ? "300-500" : "150-300";
 
 		// Build tone instruction
-		const toneInstruction = tone && tone !== "default"
-			? ` Adopt a ${tone} tone throughout.`
-			: "";
+		const toneInstruction =
+			tone && tone !== "default" ? ` Adopt a ${tone} tone throughout.` : "";
 
 		const promptText = creatorData.prompt_template.replace("{{topic}}", topic);
 
@@ -114,15 +132,21 @@ Deno.serve(async (req: Request) => {
 		let isFallback = false;
 		const modelVersion = "google/gemini-2.5-flash";
 
-		// Try AI generation via OpenRouter
+		// Try AI generation via OpenRouter with timeout
 		const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
 		if (!OPENROUTER_API_KEY)
 			throw new Error("OPENROUTER_API_KEY is not configured");
+
+		// Create abort controller for timeout
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
 		try {
 			const aiRes = await fetch(
 				"https://openrouter.ai/api/v1/chat/completions",
 				{
 					method: "POST",
+					signal: controller.signal,
 					headers: {
 						Authorization: `Bearer ${OPENROUTER_API_KEY}`,
 						"Content-Type": "application/json",
@@ -134,7 +158,7 @@ Deno.serve(async (req: Request) => {
 						messages: [
 							{
 								role: "system",
-							content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write ${lengthGuide} words.${toneInstruction} Do not include any markdown formatting.`,
+								content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write ${lengthGuide} words.${toneInstruction} Do not include any markdown formatting.`,
 							},
 							{ role: "user", content: promptText },
 						],
@@ -147,26 +171,44 @@ Deno.serve(async (req: Request) => {
 				throw new Error("AI generation failed");
 			}
 
+			clearTimeout(timeoutId);
+
 			const aiData = await aiRes.json();
 			contentText = aiData.choices?.[0]?.message?.content || "";
 			if (!contentText) throw new Error("Empty AI response");
 		} catch (aiErr) {
-			console.error("Falling back to template:", aiErr);
-		isFallback = true;
+			clearTimeout(timeoutId);
+			const errorMsg = aiErr instanceof Error ? aiErr.message : "Unknown error";
+			console.error("AI generation failed, using fallback:", errorMsg);
+			isFallback = true;
 			contentText = `[${creatorData.clone_name}] The BNB Chain ecosystem continues to evolve with exciting developments in ${topic}. As a growing network supporting thousands of dApps, BNB Chain remains a key player in the blockchain space. Developers and users alike are benefiting from low transaction fees, fast confirmation times, and a robust infrastructure. The community's commitment to innovation ensures BNB Chain stays at the forefront of Web3 adoption. Stay tuned for more updates as the ecosystem expands.`;
 		}
 
 		// Compute hashes
 		const postId = crypto.randomUUID();
 		const promptHash = keccak256(
-			toBytes("GOODVIBES_PROMPT_V1\n" + postId + "\n" + creatorData.id + "\n" + promptText),
+			toBytes(
+				"GOODVIBES_PROMPT_V1\n" +
+					postId +
+					"\n" +
+					creatorData.id +
+					"\n" +
+					promptText,
+			),
 		);
 		const contentHash = keccak256(
 			toBytes("GOODVIBES_CONTENT_V1\n" + postId + "\n" + contentText),
 		);
 		const createdAt = new Date().toISOString();
 		const metaHash = keccak256(
-			toBytes("GOODVIBES_META_V1\n" + modelVersion + "\n" + createdAt + "\n" + creatorData.wallet_address),
+			toBytes(
+				"GOODVIBES_META_V1\n" +
+					modelVersion +
+					"\n" +
+					createdAt +
+					"\n" +
+					creatorData.wallet_address,
+			),
 		);
 		const commitTxHash = keccak256(
 			toBytes("mock-commit-" + postId + "-" + Date.now()),
@@ -192,6 +234,9 @@ Deno.serve(async (req: Request) => {
 		return json({ success: true, post_id: postId });
 	} catch (e) {
 		console.error("generate-post error:", e);
-		return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
+		return json(
+			{ error: e instanceof Error ? e.message : "Unknown error" },
+			400,
+		);
 	}
 });

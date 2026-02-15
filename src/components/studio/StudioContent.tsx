@@ -212,7 +212,22 @@ export function StudioContent({
 	}
 
 	async function handlePostContent() {
-		if (!address || !profile || !generatedContent.trim()) return;
+		if (!address || !profile) {
+			toast({
+				title: "Wallet not connected",
+				description: "Please connect your wallet first.",
+				variant: "destructive",
+			});
+			return;
+		}
+		if (!generatedContent || !generatedContent.trim()) {
+			toast({
+				title: "No content",
+				description: "Please generate or write some content first.",
+				variant: "destructive",
+			});
+			return;
+		}
 		setDialogOpen(false);
 		setGenerating(true);
 		try {
