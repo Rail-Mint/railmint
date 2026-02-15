@@ -1,20 +1,20 @@
-import { motion } from "framer-motion";
-import {
-	BarChart3,
-	ChevronLeft,
-	FileText,
-	Gift,
-	LayoutGrid,
-	Settings,
-	Shield,
-	Trophy,
-	UserCog,
-	WalletCards,
-	X,
-} from "lucide-react";
-import { Link, useLocation } from "react-router-dom";
 import { BrandMark } from "@/components/branding/BrandMark";
 import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import {
+    BarChart3,
+    ChevronLeft,
+    FileText,
+    Gift,
+    LayoutGrid,
+    Settings,
+    Shield,
+    Trophy,
+    UserCog,
+    WalletCards,
+    X,
+} from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 
 type NavItem = {
 	key: string;

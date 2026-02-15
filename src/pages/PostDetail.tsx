@@ -1,3 +1,22 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageLoader } from "@/components/ui/page-loader";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { XIcon } from "@/components/ui/x-icon";
+import { useToast } from "@/hooks/use-toast";
+import { useContractStatus } from "@/hooks/useContractStatus";
+import { supabase } from "@/integrations/supabase/client";
+import {
+	computeContentHash,
+	computeMetaHash,
+	computePromptHash,
+} from "@/lib/mock-contract";
 import { formatDistanceToNow } from "date-fns";
 import {
 	ArrowLeft,
@@ -21,25 +40,6 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAccount } from "wagmi";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageLoader } from "@/components/ui/page-loader";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { XIcon } from "@/components/ui/x-icon";
-import { useToast } from "@/hooks/use-toast";
-import { useContractStatus } from "@/hooks/useContractStatus";
-import { supabase } from "@/integrations/supabase/client";
-import {
-	computeContentHash,
-	computeMetaHash,
-	computePromptHash,
-} from "@/lib/mock-contract";
 
 interface Creator {
 	id: string;
