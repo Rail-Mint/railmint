@@ -300,8 +300,8 @@ graph LR
 
 1. Clone the repository:
 ```bash
-git clone <YOUR_GIT_URL>
-cd ai-creator-hub
+git clone https://github.com/Rail-Mint/railmint
+cd railmint
 ```
 
 2. Install dependencies:
