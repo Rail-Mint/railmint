@@ -1,73 +1,445 @@
-# Welcome to your Lovable project
+# RailMint
 
-## Project info
+A decentralized platform for AI-powered creator clones on the BNB Chain. This project enables creators to register, publish content, and earn rewards through community engagement.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Overview
 
-## How can I edit this code?
+RailMint is a full-stack Web3 application that combines:
+- **Smart Contracts**: Secure blockchain infrastructure on BSC Testnet
+- **Frontend**: Modern React application with Web3 wallet integration
+- **AI Integration**: Creator content management and distribution system
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+- Creator registration with X handle and profile management
+- Content publishing with IPFS storage
+- Community voting (likes) on content
+- Epoch-based reward distribution system
+- Web3 wallet integration via RainbowKit + Wagmi
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## How It Works
 
-Changes made via Lovable will be committed automatically to this repo.
+### System Architecture
 
-**Use your preferred IDE**
+RailMint is a decentralized platform where AI-powered creators can register, publish content, and earn rewards based on community engagement. The system operates through three main smart contracts working together:
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```mermaid
+graph TB
+    User[User with Web3 Wallet] --> Frontend[React Frontend + RainbowKit]
+    Frontend --> Wagmi[Wagmi/Viem SDK]
+    Wagmi --> CreatorRegistry[CreatorRegistry Contract]
+    Wagmi --> ContentManager[ContentManager Contract]
+    Wagmi --> RewardDistributor[RewardDistributor Contract]
+    
+    CreatorRegistry --> |Stores| CreatorData[(Creator Data:<br/>X Handle, Profile Hash,<br/>Wallet Address)]
+    ContentManager --> |References| CreatorRegistry
+    ContentManager --> |Stores| ContentData[(Content Data:<br/>IPFS URI, Content Hash,<br/>Like Count)]
+    RewardDistributor --> |References| CreatorRegistry
+    RewardDistributor --> |Manages| RewardPool[(Reward Pool:<br/>BNB Deposits,<br/>Pending Rewards)]
+    
+    ContentManager --> IPFS[IPFS Network]
+    Frontend --> Supabase[Supabase Database]
+```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### User Flow
 
-Follow these steps:
+#### 1. Creator Registration
+When a user wants to become a creator:
+1. User connects their Web3 wallet (MetaMask, etc.) via RainbowKit
+2. User provides their X (Twitter) handle and profile information
+3. Frontend generates a profile hash (keccak256 of profile data)
+4. Frontend calls `CreatorRegistry.registerCreator(xHandle, profileHash)`
+5. Smart contract stores the creator data and maps their wallet address
+6. Emits `CreatorRegistered` event with creator ID
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant CR as CreatorRegistry
+    participant BC as BSC Testnet
+    
+    U->>F: Connect Wallet
+    F->>U: Request X Handle & Profile
+    U->>F: Submit Info
+    F->>F: Generate Profile Hash
+    F->>CR: registerCreator(xHandle, profileHash)
+    CR->>CR: Validate X handle (1-20 chars)
+    CR->>CR: Check wallet not registered
+    CR->>CR: Store creator data
+    CR->>BC: Emit CreatorRegistered Event
+    CR-->>F: Return Creator ID
+    F-->>U: Registration Complete
+```
+
+#### 2. Content Publishing
+Registered creators can publish content:
+1. Creator prepares content (text, media, etc.)
+2. Content is uploaded to IPFS, returning an IPFS URI
+3. Frontend generates content hash (keccak256 of content)
+4. Frontend calls `ContentManager.publishContent(creatorId, contentHash, ipfsUri)`
+5. Contract verifies creator is registered and active
+6. Content is stored with reference to the creator
+7. Emits `ContentPublished` event
+
+```mermaid
+sequenceDiagram
+    participant C as Creator
+    participant F as Frontend
+    participant IPFS as IPFS Network
+    participant CM as ContentManager
+    participant BC as BSC Testnet
+    
+    C->>F: Create Content
+    F->>IPFS: Upload Content
+    IPFS-->>F: Return IPFS URI
+    F->>F: Generate Content Hash
+    F->>CM: publishContent(creatorId, contentHash, ipfsUri)
+    CM->>CM: Verify creator exists & active
+    CM->>CM: Store content data
+    CM->>BC: Emit ContentPublished Event
+    CM-->>F: Return Content ID
+    F-->>C: Content Published
+```
+
+#### 3. Community Voting (Likes)
+Community members can like content:
+1. User views content on the frontend
+2. User clicks "Like" button
+3. Frontend calls `ContentManager.likeContent(contentId)`
+4. Contract checks user hasn't already liked this content
+5. Contract increments the like count
+6. Emits `ContentLiked` event
+7. To unlike, user calls `unlikeContent(contentId)`
+
+**Important**: One wallet = one vote per content. Users cannot like their own content multiple times.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant CM as ContentManager
+    participant BC as BSC Testnet
+    
+    U->>F: View Content
+    U->>F: Click Like
+    F->>CM: likeContent(contentId)
+    CM->>CM: Check user hasn't liked
+    CM->>CM: Increment like count
+    CM->>BC: Emit ContentLiked Event
+    CM-->>F: Success
+    F-->>U: Like Recorded
+```
+
+#### 4. Reward Distribution System
+Rewards are distributed in epochs (time periods):
+
+**Creating an Epoch (Admin Only):**
+1. Admin calls `RewardDistributor.createEpoch(startTime, endTime)` with BNB
+2. Contract creates new epoch with reward pool
+3. Epoch is active during the specified time period
+
+**Distributing Rewards (Admin Only):**
+1. After epoch ends, admin analyzes creator performance (likes, engagement)
+2. Admin calls `distributeRewards(epochId, creatorIds[], amounts[])`
+3. Contract validates arrays match in length
+4. Contract marks rewards as pending for each creator
+5. Emits `RewardsDistributed` event
+
+**Claiming Rewards (Creators):**
+1. Creator checks pending rewards via `getPendingReward(creatorId)`
+2. Creator calls `claimReward(creatorId)`
+3. Contract transfers BNB to creator's wallet
+4. Emits `RewardClaimed` event
+
+```mermaid
+sequenceDiagram
+    participant A as Admin
+    participant F as Frontend
+    participant RD as RewardDistributor
+    participant C as Creator
+    participant BC as BSC Testnet
+    
+    rect rgb(200, 230, 255)
+        Note over A,BC: Epoch Creation
+        A->>F: Create Epoch (start, end, BNB amount)
+        F->>RD: createEpoch(startTime, endTime) + BNB
+        RD->>RD: Store epoch data
+        RD->>BC: Emit EpochCreated Event
+    end
+    
+    rect rgb(255, 230, 200)
+        Note over A,BC: Reward Distribution
+        A->>F: Distribute Rewards
+        F->>RD: distributeRewards(epochId, creators[], amounts[])
+        RD->>RD: Validate arrays
+        RD->>RD: Update pending rewards
+        RD->>BC: Emit RewardsDistributed Event
+    end
+    
+    rect rgb(200, 255, 200)
+        Note over C,BC: Reward Claiming
+        C->>F: Check Pending Rewards
+        F->>RD: getPendingReward(creatorId)
+        RD-->>F: Return Amount
+        C->>F: Claim Rewards
+        F->>RD: claimReward(creatorId)
+        RD->>RD: Transfer BNB
+        RD->>BC: Emit RewardClaimed Event
+        RD-->>F: Success
+        F-->>C: Rewards Received
+    end
+```
+
+### Data Flow Summary
+
+```mermaid
+flowchart LR
+    subgraph Frontend
+        UI[React UI]
+        RK[RainbowKit]
+        Wagmi[Wagmi Hooks]
+    end
+    
+    subgraph Blockchain[BSC Testnet]
+        CR[CreatorRegistry<br/>- Registration<br/>- Profile Management]
+        CM[ContentManager<br/>- Content Publishing<br/>- Voting System]
+        RD[RewardDistributor<br/>- Epoch Management<br/>- Reward Distribution]
+    end
+    
+    subgraph Storage
+        IPFS[IPFS<br/>Content Storage]
+        SB[Supabase<br/>Metadata & Cache]
+    end
+    
+    UI --> RK
+    RK --> Wagmi
+    Wagmi --> CR
+    Wagmi --> CM
+    Wagmi --> RD
+    CM --> IPFS
+    UI --> SB
+```
+
+### Smart Contract Interactions
+
+The three contracts work together through interfaces:
+
+1. **CreatorRegistry** (Standalone): Manages creator registration and profiles
+   - `registerCreator()` - New creator signup
+   - `getCreator()` - Fetch creator details
+   - `updateProfile()` - Update creator info
+
+2. **ContentManager** (Uses CreatorRegistry): Manages content and voting
+   - `publishContent()` - Create new content
+   - `likeContent()` / `unlikeContent()` - Voting
+   - Verifies creators through CreatorRegistry interface
+
+3. **RewardDistributor** (Uses CreatorRegistry): Manages reward epochs
+   - `createEpoch()` - Start new reward period (admin)
+   - `distributeRewards()` - Assign rewards (admin)
+   - `claimReward()` - Creators claim earnings
+   - References creators through CreatorRegistry
+
+```mermaid
+graph LR
+    CR[CreatorRegistry] --> |Interface| CM[ContentManager]
+    CR --> |Interface| RD[RewardDistributor]
+    
+    subgraph Dependencies
+        direction TB
+        CM -.->|Checks creator| CR
+        RD -.->|Validates creator| CR
+    end
+```
+
+### Security Features
+
+- **Access Control**: OpenZeppelin's `Ownable` for admin functions
+- **Reentrancy Protection**: `ReentrancyGuard` on state-changing functions
+- **Input Validation**: All inputs validated (X handle length, non-empty data)
+- **One Vote Per Wallet**: Mapping prevents multiple likes from same wallet
+- **Safe Transfers**: BNB transfers use `call{value:}()` pattern
+
+## Tech Stack
+
+### Frontend
+- **Vite** - Build tool
+- **React 18** - UI framework
+- **TypeScript** - Type safety
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - Component library
+- **Radix UI** - Headless UI primitives
+- **Framer Motion** - Animations
+
+### Blockchain
+- **Hardhat** - Smart contract development
+- **OpenZeppelin Contracts** - Security standards
+- **Wagmi** - React hooks for Ethereum
+- **Viem** - Ethereum library
+- **RainbowKit** - Wallet connection UI
+
+### Backend & Storage
+- **Supabase** - Database and auth
+- **IPFS** - Decentralized content storage
+
+### Smart Contracts
+- **CreatorRegistry.sol** - Creator registration and profile management
+- **ContentManager.sol** - Content publishing and voting
+- **RewardDistributor.sol** - Epoch-based reward distribution
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm
+- Git
+- MetaMask or other Web3 wallet
+
+### Installation
+
+1. Clone the repository:
+```bash
 git clone <YOUR_GIT_URL>
+cd ai-creator-hub
+```
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+2. Install dependencies:
+```bash
+npm install
+```
 
-# Step 3: Install the necessary dependencies.
-npm i
+3. Set up environment variables:
+```bash
+cp .env.example .env
+```
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+Edit `.env` and add your configuration:
+```env
+# Supabase
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# Smart Contract Addresses (after deployment)
+VITE_CREATOR_REGISTRY_ADDRESS=0x...
+VITE_CONTENT_PUBLISHING_ADDRESS=0x...
+VITE_VOTING_SYSTEM_ADDRESS=0x...
+VITE_REWARD_DISTRIBUTOR_ADDRESS=0x...
+```
+
+4. Start the development server:
+```bash
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Smart Contract Development
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Compile Contracts
+```bash
+npm run hardhat:compile
+```
 
-**Use GitHub Codespaces**
+### Deploy to Testnet
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**BSC Testnet:**
+```bash
+npm run hardhat:deploy:bsc
+```
 
-## What technologies are used for this project?
+### Test Contracts
+```bash
+npm run hardhat:test
+```
 
-This project is built with:
+## Available Scripts
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+- `npm run test` - Run tests (Vitest)
+- `npm run test:watch` - Run tests in watch mode
+- `npm run hardhat:compile` - Compile smart contracts
+- `npm run hardhat:test` - Run contract tests
 
-## How can I deploy this project?
+## Project Structure
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```
+├── contracts/           # Solidity smart contracts
+│   ├── CreatorRegistry.sol
+│   ├── ContentManager.sol
+│   └── RewardDistributor.sol
+├── scripts/            # Deployment scripts
+│   └── deploy.ts
+├── src/
+│   ├── components/     # React components
+│   ├── hooks/         # Custom React hooks
+│   ├── lib/           # Utility functions
+│   ├── pages/         # Page components
+│   └── App.tsx
+├── docs/              # Documentation
+│   ├── smart-contracts-deployment.md
+│   └── smart-contracts-frontend-integration.md
+└── hardhat.config.cjs # Hardhat configuration
+```
 
-## Can I connect a custom domain to my Lovable project?
+## Network Configuration
 
-Yes, you can!
+### BSC Testnet
+- **Chain ID**: 97
+- **RPC**: https://data-seed-prebsc-1-s1.binance.org:8545
+- **Explorer**: https://testnet.bscscan.com
+- **Faucet**: https://testnet.bnbchain.org/faucet-smart
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Documentation
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+For detailed information:
+
+- [Smart Contract Deployment Guide](docs/smart-contracts-deployment.md)
+- [Frontend Integration Guide](docs/smart-contracts-frontend-integration.md)
+- [Smart Contracts Summary](docs/smart-contracts-summary.md)
+
+## Key Features
+
+### Creator Registration
+- Register with X handle and profile hash
+- Wallet-to-creator mapping
+- Profile update and deactivation
+
+### Content Publishing
+- Publish content with IPFS URI
+- Content hash verification
+- Like/unlike functionality (one vote per wallet)
+
+### Reward System
+- Epoch-based reward distribution
+- BNB reward pool management
+- Batch reward distribution
+- Claim pending rewards
+
+## Security
+
+- OpenZeppelin security libraries (Ownable, ReentrancyGuard)
+- Access control on admin functions
+- Input validation
+- Checks-Effects-Interactions pattern
+- Reentrancy protection
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
+
+## License
+
+MIT
+
+## Resources
+
+- [Hardhat Documentation](https://hardhat.org/docs)
+- [OpenZeppelin Documentation](https://docs.openzeppelin.com/)
+- [Wagmi Documentation](https://wagmi.sh/)
+- [BNB Chain Documentation](https://docs.bnbchain.org/)
