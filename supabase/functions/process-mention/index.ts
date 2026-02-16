@@ -197,7 +197,9 @@ async function verifyWebhookSignature(params: {
 	supabase: any;
 }) {
 	const secret = Deno.env.get("X_WEBHOOK_SECRET");
-	if (!secret) return;
+	if (!secret) {
+		throw new Error("X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed");
+	}
 
 	const signature = params.req.headers.get("x-signature")?.trim();
 	const timestamp = params.req.headers.get("x-timestamp")?.trim();
