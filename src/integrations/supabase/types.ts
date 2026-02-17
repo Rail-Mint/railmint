@@ -381,6 +381,30 @@ export type Database = {
         }
         Relationships: []
       }
+      wallet_activity_log: {
+        Row: {
+          created_at: string
+          event_type: string
+          id: string
+          metadata: Json | null
+          wallet_address: string
+        }
+        Insert: {
+          created_at?: string
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          wallet_address: string
+        }
+        Update: {
+          created_at?: string
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          wallet_address?: string
+        }
+        Relationships: []
+      }
       webhook_nonces: {
         Row: {
           expires_at: string

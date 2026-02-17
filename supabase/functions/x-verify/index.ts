@@ -16,6 +16,30 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function getSupabase() {
+  return createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+  );
+}
+
+async function logActivity(
+  supabase: ReturnType<typeof createClient>,
+  wallet_address: string,
+  event_type: string,
+  metadata: Record<string, unknown> = {},
+) {
+  try {
+    await supabase.from("wallet_activity_log").insert({
+      wallet_address,
+      event_type,
+      metadata,
+    });
+  } catch (e) {
+    console.error("[x-verify] Failed to log activity:", e);
+  }
+}
+
 async function verifyWalletSignature(body: Record<string, unknown>): Promise<string> {
   const wallet_address = String(body.wallet_address || "").trim();
   const signature = String(body.signature || "").trim();
@@ -39,6 +63,8 @@ async function verifyWalletSignature(body: Record<string, unknown>): Promise<str
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const supabase = getSupabase();
+
   try {
     const body = await req.json();
     const wallet_address = await verifyWalletSignature(body);
@@ -50,6 +76,9 @@ Deno.serve(async (req: Request) => {
     if (!code || !code_verifier || !redirect_uri) {
       return json({ error: "Missing OAuth parameters" }, 400);
     }
+
+    // Log the verification attempt
+    await logActivity(supabase, wallet_address, "x_verify_attempt", { redirect_uri });
 
     const clientId = Deno.env.get("TWITTER_CLIENT_ID")!;
     const clientSecret = Deno.env.get("TWITTER_SECRET")!;
@@ -72,6 +101,7 @@ Deno.serve(async (req: Request) => {
     if (!tokenRes.ok) {
       const err = await tokenRes.text();
       console.error("[x-verify] Token exchange failed:", err);
+      await logActivity(supabase, wallet_address, "x_verify_token_failed", { error: err });
       return json({ error: "Failed to exchange authorization code with X" }, 400);
     }
 
@@ -86,6 +116,7 @@ Deno.serve(async (req: Request) => {
     if (!userRes.ok) {
       const err = await userRes.text();
       console.error("[x-verify] User fetch failed:", err);
+      await logActivity(supabase, wallet_address, "x_verify_user_fetch_failed", { error: err });
       return json({ error: "Failed to fetch X user profile" }, 400);
     }
 
@@ -97,11 +128,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const handle = `@${xUsername}`;
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
 
     // Find the creator by wallet
     const { data: creator, error: findErr } = await supabase
@@ -117,6 +143,10 @@ Deno.serve(async (req: Request) => {
 
     // Verify the X handle matches what the creator registered (case-insensitive)
     if (creator.x_handle && creator.x_handle.toLowerCase() !== handle.toLowerCase()) {
+      await logActivity(supabase, wallet_address, "x_verify_handle_mismatch", {
+        registered: creator.x_handle,
+        actual: handle,
+      });
       return json({
         error: `X account @${xUsername} does not match registered handle ${creator.x_handle}. Update your handle first.`,
       }, 400);
@@ -133,6 +163,12 @@ Deno.serve(async (req: Request) => {
       .eq("id", creator.id);
 
     if (updateErr) throw updateErr;
+
+    // Log successful verification
+    await logActivity(supabase, wallet_address, "x_verify_success", {
+      x_handle: handle,
+      creator_id: creator.id,
+    });
 
     return json({
       success: true,

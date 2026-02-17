@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.x-verify]
 verify_jwt = false
+
+[functions.x-oauth-start]
+verify_jwt = false
