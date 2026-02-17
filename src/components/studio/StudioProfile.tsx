@@ -17,8 +17,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import type { CreatorProfile } from "@/hooks/useStudioData";
-import { supabase } from "@/integrations/supabase/client";
 import { useSignedAction } from "@/hooks/useSignedAction";
+import { buildXOAuthUrl } from "@/lib/x-oauth";
+import { supabase } from "@/integrations/supabase/client";
 
 const profileSchema = z.object({
 	clone_name: z
@@ -132,21 +133,9 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		setVerifyingX(true);
 		try {
-			const { data, error } = await supabase.auth.signInWithOAuth({
-				provider: "twitter",
-				options: {
-					redirectTo: `${window.location.origin}/studio/profile?verified=true`,
-					queryParams: {
-						force_login: "true",
-					},
-				},
-			});
-
-			if (error) throw error;
-
-			if (!data.url) {
-				throw new Error("No redirect URL returned");
-			}
+			const redirectUri = `${window.location.origin}/studio/profile`;
+			const authUrl = await buildXOAuthUrl(redirectUri);
+			window.location.href = authUrl;
 		} catch (err: any) {
 			toast({
 				title: "Verification failed",
@@ -157,14 +146,57 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		}
 	}, [profile, toast]);
 
+	// Handle OAuth callback from X
 	useEffect(() => {
-		// Clean up URL params after OAuth redirect — verification status
-		// is handled server-side by the process-mention edge function
 		const params = new URLSearchParams(window.location.search);
-		if (params.get("verified") === "true") {
+		const code = params.get("code");
+		const state = params.get("state");
+
+		if (!code || !profile?.wallet_address) return;
+
+		const savedState = sessionStorage.getItem("x_oauth_state");
+		if (state !== savedState) {
+			toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
 			window.history.replaceState({}, "", "/studio/profile");
+			return;
 		}
-	}, []);
+
+		const codeVerifier = sessionStorage.getItem("x_oauth_verifier");
+		if (!codeVerifier) {
+			toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
+			window.history.replaceState({}, "", "/studio/profile");
+			return;
+		}
+
+		// Clean up
+		sessionStorage.removeItem("x_oauth_state");
+		sessionStorage.removeItem("x_oauth_verifier");
+		window.history.replaceState({}, "", "/studio/profile");
+
+		setVerifyingX(true);
+		invokeWithSignature("x-verify", {
+			code,
+			code_verifier: codeVerifier,
+			redirect_uri: `${window.location.origin}/studio/profile`,
+		}, profile.wallet_address)
+			.then((data) => {
+				onProfileUpdate({
+					...profile,
+					x_handle: data.x_handle,
+					x_verified: true,
+					x_verified_at: new Date().toISOString(),
+				});
+				toast({ title: "X account verified!", description: `Linked as ${data.x_handle}` });
+			})
+			.catch((err: any) => {
+				toast({
+					title: "Verification failed",
+					description: err.message || "Could not verify X account",
+					variant: "destructive",
+				});
+			})
+			.finally(() => setVerifyingX(false));
+	}, [profile, invokeWithSignature, onProfileUpdate, toast]);
 
 	if (!profile) return null;
 

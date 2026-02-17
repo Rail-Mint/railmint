@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.update-profile]
 verify_jwt = false
+
+[functions.x-verify]
+verify_jwt = false
