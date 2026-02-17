@@ -120,6 +120,17 @@ Deno.serve(async (req: Request) => {
 
     if (error) throw error;
 
+    // Log wallet registration/update activity
+    try {
+      await supabase.from("wallet_activity_log").insert({
+        wallet_address,
+        event_type: existingHandle || existingName ? "creator_profile_updated" : "creator_registered",
+        metadata: { creator_id: data.id, clone_name, x_handle: handle },
+      });
+    } catch (logErr) {
+      console.error("[upsert-creator] Activity log failed:", logErr);
+    }
+
     return json({ success: true, creator_id: data.id });
   } catch (e) {
     const errorId = crypto.randomUUID().slice(0, 8);

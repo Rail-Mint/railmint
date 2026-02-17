@@ -1,6 +1,7 @@
 /**
  * PKCE (Proof Key for Code Exchange) utilities for OAuth 2.0 flows.
  */
+import { supabase } from "@/integrations/supabase/client";
 
 function base64UrlEncode(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
@@ -22,34 +23,27 @@ export async function generateCodeChallenge(verifier: string): Promise<string> {
   return base64UrlEncode(digest);
 }
 
-const TWITTER_CLIENT_ID_KEY = "VITE_TWITTER_CLIENT_ID";
-
 /**
- * Build the Twitter OAuth 2.0 authorization URL with PKCE.
- * Stores code_verifier in sessionStorage for the callback.
+ * Build the X OAuth 2.0 authorization URL via the x-oauth-start edge function.
+ * Stores code_verifier and state in sessionStorage for the callback.
  */
 export async function buildXOAuthUrl(redirectUri: string): Promise<string> {
-  const clientId = import.meta.env.VITE_TWITTER_CLIENT_ID as string | undefined;
-  if (!clientId) throw new Error("Twitter Client ID not configured");
-
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-  // Persist for the callback
-  sessionStorage.setItem("x_oauth_verifier", codeVerifier);
-
-  const state = crypto.randomUUID();
-  sessionStorage.setItem("x_oauth_state", state);
-
-  const params = new URLSearchParams({
-    response_type: "code",
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    scope: "tweet.read users.read offline.access",
-    state,
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
+  const { data, error } = await supabase.functions.invoke("x-oauth-start", {
+    body: {
+      code_challenge: codeChallenge,
+      redirect_uri: redirectUri,
+    },
   });
 
-  return `https://x.com/i/oauth2/authorize?${params.toString()}`;
+  if (error) throw error;
+  if (data?.error) throw new Error(data.error);
+
+  // Persist for the callback
+  sessionStorage.setItem("x_oauth_verifier", codeVerifier);
+  sessionStorage.setItem("x_oauth_state", data.state);
+
+  return data.authorization_url;
 }
