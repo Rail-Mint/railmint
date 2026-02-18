@@ -188,20 +188,22 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       setStep(4);
     } catch (err: any) {
       const msg = (err.message || "").toLowerCase();
-      if (msg.includes("duplicate") || msg.includes("already registered") || msg.includes("already taken")) {
-        if (msg.includes("handle")) {
-          toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
-        } else if (msg.includes("wallet")) {
-          toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
-          onComplete();
-          return;
-        } else if (msg.includes("clone") || msg.includes("name")) {
-          toast({ title: "Name conflict", description: "This clone name was just taken. Go back and choose another.", variant: "destructive" });
-        } else {
-          toast({ title: "Conflict detected", description: "A duplicate record exists. Please check your handle and clone name.", variant: "destructive" });
-        }
+      // Edge function returns specific conflict messages — match them precisely
+      if (msg.includes("x handle is already registered") || msg.includes("handle is already")) {
+        toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
         setStep(1);
         setSaving(false);
+        return;
+      }
+      if (msg.includes("clone name is already") || msg.includes("name is already taken")) {
+        toast({ title: "Name conflict", description: "This clone name was just taken. Choose a different name.", variant: "destructive" });
+        setStep(1);
+        setSaving(false);
+        return;
+      }
+      if (msg.includes("wallet") && (msg.includes("already registered") || msg.includes("already exists"))) {
+        toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
+        onComplete();
         return;
       }
       toast({ title: "Creation failed", description: err.message, variant: "destructive" });
