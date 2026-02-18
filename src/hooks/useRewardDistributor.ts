@@ -117,15 +117,15 @@ export function useGetPendingRewards(wallet: `0x${string}` | undefined) {
 
 export function useGetReward(
 	epochId: bigint | undefined,
-	wallet: `0x${string}` | undefined,
+	creatorId: bigint | undefined,
 ) {
 	const { data, isLoading, error, refetch } = useReadContract({
 		address: REWARD_DISTRIBUTOR_ADDRESS as `0x${string}`,
 		abi: REWARD_DISTRIBUTOR_ABI,
 		functionName: "getReward",
-		args: epochId !== undefined && wallet ? [epochId, wallet] : undefined,
+		args: epochId !== undefined && creatorId !== undefined ? [epochId, creatorId] : undefined,
 		query: {
-			enabled: deployed && epochId !== undefined && !!wallet,
+			enabled: deployed && epochId !== undefined && creatorId !== undefined,
 		},
 	});
 

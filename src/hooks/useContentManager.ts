@@ -108,7 +108,7 @@ export function useGetContentsByCreator(creatorId: bigint | undefined) {
 	});
 
 	return {
-		contents: data as Content[] | undefined,
+		contents: data as readonly bigint[] | undefined,
 		isLoading,
 		error,
 		refetch,
