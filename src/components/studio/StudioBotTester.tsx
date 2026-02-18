@@ -79,17 +79,15 @@ export function StudioBotTester({ profile, address }: Props) {
 
 			if (data?.error) throw new Error(data.error);
 
-			const { data: postData, error } = await supabase
+		const { data: postData, error } = await supabase
 				.from("posts")
-				.select("content_text, content_html")
+				.select("content_text")
 				.eq("id", data.post_id)
 				.single();
 
 			if (error) throw new Error(error.message);
 
-			const raw =
-				postData?.content_text ||
-				(postData?.content_html ? stripHtml(postData.content_html) : "");
+			const raw = postData?.content_text || "";
 			setResponse(raw || "(Empty response)");
 		} catch (err: unknown) {
 			const message = err instanceof Error ? err.message : "An error occurred";

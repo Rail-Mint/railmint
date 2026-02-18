@@ -14,8 +14,225 @@ export type Database = {
   }
   public: {
     Tables: {
+      creator_conversation_summaries: {
+        Row: {
+          created_at: string
+          creator_id: string
+          id: string
+          mention_id: string | null
+          summary_text: string
+          topic: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          id?: string
+          mention_id?: string | null
+          summary_text: string
+          topic?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          id?: string
+          mention_id?: string | null
+          summary_text?: string
+          topic?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_conversation_summaries_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creator_conversation_summaries_mention_id_fkey"
+            columns: ["mention_id"]
+            isOneToOne: false
+            referencedRelation: "mentions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creator_embeddings: {
+        Row: {
+          created_at: string
+          creator_id: string
+          embedding: string
+          id: string
+          metadata: Json | null
+          source_id: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          embedding: string
+          id?: string
+          metadata?: Json | null
+          source_id: string
+          source_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          embedding?: string
+          id?: string
+          metadata?: Json | null
+          source_id?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_embeddings_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creator_news_digests: {
+        Row: {
+          created_at: string
+          creator_id: string
+          digest_text: string
+          fetched_at: string
+          id: string
+          source_urls: string[] | null
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          digest_text: string
+          fetched_at?: string
+          id?: string
+          source_urls?: string[] | null
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          digest_text?: string
+          fetched_at?: string
+          id?: string
+          source_urls?: string[] | null
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_news_digests_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creator_post_index: {
+        Row: {
+          created_at: string
+          creator_id: string
+          id: string
+          post_id: string
+          summary: string | null
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          creator_id: string
+          id?: string
+          post_id: string
+          summary?: string | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          creator_id?: string
+          id?: string
+          post_id?: string
+          summary?: string | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_post_index_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creator_post_index_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      creator_profiles: {
+        Row: {
+          bio: string | null
+          context_opt_in: boolean
+          created_at: string
+          creator_id: string
+          id: string
+          interests: string[] | null
+          specialties: string[] | null
+          tags: string[] | null
+          updated_at: string
+        }
+        Insert: {
+          bio?: string | null
+          context_opt_in?: boolean
+          created_at?: string
+          creator_id: string
+          id?: string
+          interests?: string[] | null
+          specialties?: string[] | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Update: {
+          bio?: string | null
+          context_opt_in?: boolean
+          created_at?: string
+          creator_id?: string
+          id?: string
+          interests?: string[] | null
+          specialties?: string[] | null
+          tags?: string[] | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "creator_profiles_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       creators: {
         Row: {
+          agentic_context_opt_in: boolean
           clone_name: string
           created_at: string
           id: string
@@ -29,6 +246,7 @@ export type Database = {
           x_verified_at: string | null
         }
         Insert: {
+          agentic_context_opt_in?: boolean
           clone_name: string
           created_at?: string
           id?: string
@@ -42,6 +260,7 @@ export type Database = {
           x_verified_at?: string | null
         }
         Update: {
+          agentic_context_opt_in?: boolean
           clone_name?: string
           created_at?: string
           id?: string
@@ -431,6 +650,24 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      match_creator_embeddings: {
+        Args: {
+          creator_id_filter: string
+          history_cutoff?: string
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          created_at: string
+          creator_id: string
+          id: string
+          metadata: Json
+          similarity: number
+          source_id: string
+          source_type: string
+        }[]
       }
     }
     Enums: {
