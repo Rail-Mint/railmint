@@ -24,6 +24,7 @@ const PostDetail = lazy(() => import("./pages/PostDetail"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const Rewards = lazy(() => import("./pages/Rewards"));
 const Studio = lazy(() => import("./pages/Studio"));
+const StudioOAuthCallback = lazy(() => import("./pages/StudioOAuthCallback"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -69,6 +70,7 @@ const App = () => (
 						<BrowserRouter>
 							<Suspense fallback={<RouteFallback />}>
 								<Routes>
+									<Route path="/studio/oauth-callback" element={<StudioOAuthCallback />} />
 									<Route path="/studio/*" element={<Studio />} />
 									<Route element={<AppLayout />}>
 										<Route path="/" element={<Index />} />

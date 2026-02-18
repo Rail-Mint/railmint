@@ -8,7 +8,7 @@ import {
 	User,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,19 +19,12 @@ import { useToast } from "@/hooks/use-toast";
 import type { CreatorProfile } from "@/hooks/useStudioData";
 import { useSignedAction } from "@/hooks/useSignedAction";
 import { buildXOAuthUrl } from "@/lib/x-oauth";
-import { supabase } from "@/integrations/supabase/client";
 
 const profileSchema = z.object({
 	clone_name: z
 		.string()
 		.min(2, "Clone name must be at least 2 characters")
 		.max(60),
-	x_handle: z
-		.string()
-		.regex(/^@?[\w]*$/, "Invalid X handle")
-		.max(30)
-		.optional()
-		.or(z.literal("")),
 	persona_text: z
 		.string()
 		.min(20, "Persona must be at least 20 characters")
@@ -54,18 +47,17 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	const [verifyingX, setVerifyingX] = useState(false);
 	const [form, setForm] = useState({
 		clone_name: "",
-		x_handle: "",
 		persona_text: "",
 		prompt_template: "",
 	});
 	const [saving, setSaving] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
+	const popupRef = useRef<Window | null>(null);
 
 	useEffect(() => {
 		if (profile) {
 			setForm({
 				clone_name: profile.clone_name,
-				x_handle: profile.x_handle ?? "",
 				persona_text: profile.persona_text,
 				prompt_template: profile.prompt_template,
 			});
@@ -90,7 +82,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		try {
 			await invokeWithSignature("update-profile", {
 				clone_name: form.clone_name.trim(),
-				x_handle: form.x_handle.trim() || null,
+				x_handle: profile.x_handle ?? null,
 				persona_text: form.persona_text.trim(),
 				prompt_template: form.prompt_template.trim(),
 			}, profile.wallet_address);
@@ -98,7 +90,6 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 			onProfileUpdate({
 				...profile,
 				clone_name: form.clone_name.trim(),
-				x_handle: form.x_handle.trim() || null,
 				persona_text: form.persona_text.trim(),
 				prompt_template: form.prompt_template.trim(),
 			});
@@ -119,7 +110,6 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		if (profile) {
 			setForm({
 				clone_name: profile.clone_name,
-				x_handle: profile.x_handle ?? "",
 				persona_text: profile.persona_text,
 				prompt_template: profile.prompt_template,
 			});
@@ -133,83 +123,109 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		setVerifyingX(true);
 		try {
-			// Always use the canonical published URL as the redirect_uri.
-			// X OAuth requires the redirect_uri to exactly match a pre-registered callback URL.
-			// Dynamic preview/dev URLs are not registered and will cause "Something went wrong" on X.
 			const canonicalOrigin = "https://railmint.lovable.app";
-			const redirectUri = `${canonicalOrigin}/studio/profile`;
+			const redirectUri = `${canonicalOrigin}/studio/oauth-callback`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
-			// Open in a new tab — X blocks OAuth when loaded inside an iframe
-			const popup = window.open(authUrl, "_blank");
+
+			// Open as a centered popup
+			const width = 500;
+			const height = 660;
+			const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+			const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+			const popup = window.open(
+				authUrl,
+				"x_oauth",
+				`width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`,
+			);
+
 			if (!popup) {
 				toast({
 					title: "Popup blocked",
 					description: "Please allow popups for this site, then try again.",
 					variant: "destructive",
 				});
+				setVerifyingX(false);
+				return;
 			}
+
+			popupRef.current = popup;
 		} catch (err: any) {
 			toast({
 				title: "Verification failed",
 				description: err.message || "Could not start X verification",
 				variant: "destructive",
 			});
-		} finally {
 			setVerifyingX(false);
 		}
 	}, [profile, toast]);
 
-	// Handle OAuth callback from X
+	// Listen for postMessage from the OAuth popup
 	useEffect(() => {
-		const params = new URLSearchParams(window.location.search);
-		const code = params.get("code");
-		const state = params.get("state");
+		const handler = async (event: MessageEvent) => {
+			if (event.origin !== window.location.origin) return;
+			if (!event.data?.type?.startsWith("x-oauth")) return;
 
-		if (!code || !profile?.wallet_address) return;
+			popupRef.current?.close();
+			popupRef.current = null;
 
-		const savedState = localStorage.getItem("x_oauth_state");
-		if (state !== savedState) {
-			toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
-			window.history.replaceState({}, "", "/studio/profile");
-			return;
-		}
-
-		const codeVerifier = localStorage.getItem("x_oauth_verifier");
-		if (!codeVerifier) {
-			toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
-			window.history.replaceState({}, "", "/studio/profile");
-			return;
-		}
-
-		// Clean up
-		localStorage.removeItem("x_oauth_state");
-		localStorage.removeItem("x_oauth_verifier");
-		window.history.replaceState({}, "", "/studio/profile");
-
-		setVerifyingX(true);
-		invokeWithSignature("x-verify", {
-			code,
-			code_verifier: codeVerifier,
-			// Must exactly match the redirect_uri used when requesting the code
-			redirect_uri: `https://railmint.lovable.app/studio/profile`,
-		}, profile.wallet_address)
-			.then((data) => {
-				onProfileUpdate({
-					...profile,
-					x_handle: data.x_handle,
-					x_verified: true,
-					x_verified_at: new Date().toISOString(),
-				});
-				toast({ title: "X account verified!", description: `Linked as ${data.x_handle}` });
-			})
-			.catch((err: any) => {
+			if (event.data.type === "x-oauth-error") {
 				toast({
 					title: "Verification failed",
-					description: err.message || "Could not verify X account",
+					description: event.data.error || "X OAuth error",
 					variant: "destructive",
 				});
-			})
-			.finally(() => setVerifyingX(false));
+				setVerifyingX(false);
+				return;
+			}
+
+			if (event.data.type === "x-oauth-complete") {
+				const { code, state } = event.data;
+
+				const savedState = localStorage.getItem("x_oauth_state");
+				if (state !== savedState) {
+					toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
+					setVerifyingX(false);
+					return;
+				}
+
+				const codeVerifier = localStorage.getItem("x_oauth_verifier");
+				if (!codeVerifier) {
+					toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
+					setVerifyingX(false);
+					return;
+				}
+
+				localStorage.removeItem("x_oauth_state");
+				localStorage.removeItem("x_oauth_verifier");
+
+				try {
+					const data = await invokeWithSignature("x-verify", {
+						code,
+						code_verifier: codeVerifier,
+						redirect_uri: "https://railmint.lovable.app/studio/oauth-callback",
+					}, profile!.wallet_address);
+
+					onProfileUpdate({
+						...profile!,
+						x_handle: data.x_handle,
+						x_verified: true,
+						x_verified_at: new Date().toISOString(),
+					});
+					toast({ title: "X account verified!", description: `Linked as ${data.x_handle}` });
+				} catch (err: any) {
+					toast({
+						title: "Verification failed",
+						description: err.message || "Could not verify X account",
+						variant: "destructive",
+					});
+				} finally {
+					setVerifyingX(false);
+				}
+			}
+		};
+
+		window.addEventListener("message", handler);
+		return () => window.removeEventListener("message", handler);
 	}, [profile, invokeWithSignature, onProfileUpdate, toast]);
 
 	if (!profile) return null;
@@ -247,25 +263,9 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 									<h2 className="text-xl font-bold">{profile.clone_name}</h2>
 								)}
 								<div className="flex items-center gap-2 mt-0.5">
-									{editing ? (
-										<div>
-											<Input
-												value={form.x_handle}
-												onChange={(e) =>
-													setForm((f) => ({ ...f, x_handle: e.target.value }))
-												}
-												placeholder="@handle"
-												className="h-7 text-sm border-border/40 w-40"
-											/>
-											{errors.x_handle && (
-												<p className="text-xs text-destructive">
-													{errors.x_handle}
-												</p>
-											)}
-										</div>
-									) : (
+									{profile.x_handle && (
 										<span className="text-sm text-muted-foreground">
-											{profile.x_handle || "No handle"}
+											{profile.x_handle}
 										</span>
 									)}
 									{profile.x_verified && (
@@ -316,12 +316,8 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 					<div className="flex flex-wrap gap-2">
 						<InfoChip label="Wallet" value={walletShort} />
 						<InfoChip
-							label="Created"
-							value={
-								new Date(profile.x_verified_at ?? "").getTime()
-									? "Active"
-									: "Pending"
-							}
+							label="Status"
+							value={profile.x_verified ? "Verified" : "Pending"}
 						/>
 					</div>
 				</CardContent>

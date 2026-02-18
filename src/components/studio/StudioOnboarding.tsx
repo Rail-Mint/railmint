@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { Bot, CheckCircle2, Loader2, Sparkles } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Loader2, Sparkles, Twitter } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { keccak256, toHex } from "viem";
 import { z } from "zod";
@@ -15,12 +15,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { supabase } from "@/integrations/supabase/client";
+import { buildXOAuthUrl } from "@/lib/x-oauth";
 
 const schema = z.object({
-  x_handle: z
-    .string()
-    .min(1, "X handle is required")
-    .regex(/^@?[\w]+$/, "Invalid handle"),
   clone_name: z.string().min(2, "At least 2 characters"),
   persona_text: z.string().min(20, "At least 20 characters"),
   prompt_template: z.string().min(10, "At least 10 characters"),
@@ -62,15 +59,16 @@ export function StudioOnboarding({ address, onComplete }: Props) {
   const [step, setStep] = useState<Step>(1);
   const [saving, setSaving] = useState(false);
   const [checkingIdentity, setCheckingIdentity] = useState(false);
+  const [verifyingX, setVerifyingX] = useState(false);
   const [selectedTone, setSelectedTone] = useState("strategist");
   const [selectedFocus, setSelectedFocus] = useState("defi");
   const [selectedGoal, setSelectedGoal] = useState("engage");
   const [customNote, setCustomNote] = useState("");
+  const popupRef = useRef<Window | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      x_handle: "",
       clone_name: "RailMint Strategist",
       persona_text: "",
       prompt_template: "",
@@ -114,18 +112,14 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 
   /** Validate identity fields AND check for duplicates before advancing to step 2 */
   const handleIdentityNext = useCallback(async () => {
-    const valid = await form.trigger(["x_handle", "clone_name"]);
+    const valid = await form.trigger(["clone_name"]);
     if (!valid) return;
 
     setCheckingIdentity(true);
     try {
-      const rawHandle = form.getValues("x_handle");
-      const handle = rawHandle.startsWith("@") ? rawHandle : `@${rawHandle}`;
       const cloneName = form.getValues("clone_name").trim();
 
-      // Parallel checks: handle, clone_name, wallet
-      const [handleRes, nameRes, walletRes] = await Promise.all([
-        supabase.from("creators").select("id").ilike("x_handle", handle).maybeSingle(),
+      const [nameRes, walletRes] = await Promise.all([
         supabase.from("creators").select("id").ilike("clone_name", cloneName).maybeSingle(),
         supabase.from("creators").select("id").ilike("wallet_address", address).maybeSingle(),
       ]);
@@ -133,10 +127,6 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       if (walletRes.data) {
         toast({ title: "Profile already exists", description: "Redirecting to your studio..." });
         onComplete();
-        return;
-      }
-      if (handleRes.data) {
-        toast({ title: "Handle taken", description: `${handle} is already registered.`, variant: "destructive" });
         return;
       }
       if (nameRes.data) {
@@ -162,39 +152,29 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 
     setSaving(true);
     try {
-      const handle = values.x_handle.startsWith("@") ? values.x_handle : `@${values.x_handle}`;
-
       const profileHash = keccak256(
         toHex(JSON.stringify({ persona: values.persona_text, prompt: values.prompt_template })),
       );
 
       if (contractsDeployed) {
         try {
-          registerCreator(handle, profileHash as `0x${string}`);
+          registerCreator("", profileHash as `0x${string}`);
         } catch {
           console.warn("On-chain registration skipped in mock mode");
         }
       }
 
-      const data = await invokeWithSignature("upsert-creator", {
-        x_handle: handle,
+      await invokeWithSignature("upsert-creator", {
+        x_handle: null,
         clone_name: values.clone_name.trim(),
         persona_text: values.persona_text.trim(),
         prompt_template: values.prompt_template.trim(),
       }, address);
 
       toast({ title: "Clone created!", description: `${values.clone_name} is ready.` });
-      onComplete();
       setStep(4);
     } catch (err: any) {
       const msg = (err.message || "").toLowerCase();
-      // Edge function returns specific conflict messages — match them precisely
-      if (msg.includes("x handle is already registered") || msg.includes("handle is already")) {
-        toast({ title: "Handle conflict", description: "This X handle was just taken. Go back and choose another.", variant: "destructive" });
-        setStep(1);
-        setSaving(false);
-        return;
-      }
       if (msg.includes("clone name is already") || msg.includes("name is already taken")) {
         toast({ title: "Name conflict", description: "This clone name was just taken. Choose a different name.", variant: "destructive" });
         setStep(1);
@@ -211,6 +191,102 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       setSaving(false);
     }
   }, [form, address, contractsDeployed, registerCreator, toast, onComplete, invokeWithSignature]);
+
+  // Listen for postMessage from the OAuth popup (step 4)
+  useEffect(() => {
+    const handler = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data?.type?.startsWith("x-oauth")) return;
+
+      popupRef.current?.close();
+      popupRef.current = null;
+
+      if (event.data.type === "x-oauth-error") {
+        toast({
+          title: "Verification failed",
+          description: event.data.error || "X OAuth error",
+          variant: "destructive",
+        });
+        setVerifyingX(false);
+        return;
+      }
+
+      if (event.data.type === "x-oauth-complete") {
+        const { code, state } = event.data;
+        const savedState = localStorage.getItem("x_oauth_state");
+        if (state !== savedState) {
+          toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
+          setVerifyingX(false);
+          return;
+        }
+        const codeVerifier = localStorage.getItem("x_oauth_verifier");
+        if (!codeVerifier) {
+          toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
+          setVerifyingX(false);
+          return;
+        }
+        localStorage.removeItem("x_oauth_state");
+        localStorage.removeItem("x_oauth_verifier");
+
+        try {
+          await invokeWithSignature("x-verify", {
+            code,
+            code_verifier: codeVerifier,
+            redirect_uri: "https://railmint.lovable.app/studio/oauth-callback",
+          }, address);
+          toast({ title: "X account verified!", description: "Your X account is now linked." });
+          onComplete();
+        } catch (err: any) {
+          toast({
+            title: "Verification failed",
+            description: err.message || "Could not verify X account",
+            variant: "destructive",
+          });
+        } finally {
+          setVerifyingX(false);
+        }
+      }
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [address, invokeWithSignature, onComplete, toast]);
+
+  const handleVerifyX = useCallback(async () => {
+    setVerifyingX(true);
+    try {
+      const redirectUri = "https://railmint.lovable.app/studio/oauth-callback";
+      const authUrl = await buildXOAuthUrl(redirectUri);
+
+      const width = 500;
+      const height = 660;
+      const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+      const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+      const popup = window.open(
+        authUrl,
+        "x_oauth",
+        `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`,
+      );
+
+      if (!popup) {
+        toast({
+          title: "Popup blocked",
+          description: "Please allow popups for this site, then try again.",
+          variant: "destructive",
+        });
+        setVerifyingX(false);
+        return;
+      }
+      popupRef.current = popup;
+    } catch (err: any) {
+      toast({
+        title: "Verification failed",
+        description: err.message || "Could not start X verification",
+        variant: "destructive",
+      });
+      setVerifyingX(false);
+    }
+  }, [toast]);
 
   const steps = [
     { id: 1, label: "Identity" },
@@ -250,17 +326,6 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                 <CardTitle>Set your identity</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">X Handle</label>
-                  <Input
-                    placeholder="@yourhandle"
-                    {...form.register("x_handle")}
-                    className="border-border/40"
-                  />
-                  {form.formState.errors.x_handle && (
-                    <p className="mt-1 text-xs text-destructive">{form.formState.errors.x_handle.message}</p>
-                  )}
-                </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium">Clone Name</label>
                   <Input {...form.register("clone_name")} className="border-border/40" />
@@ -372,10 +437,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                 <CardTitle>Review & Create</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ReviewField label="X Handle" value={form.getValues("x_handle")} />
-                  <ReviewField label="Clone Name" value={form.getValues("clone_name")} />
-                </div>
+                <ReviewField label="Clone Name" value={form.getValues("clone_name")} />
                 <div className="rounded-xl border border-border/40 bg-muted/20 p-4">
                   <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">Persona</p>
                   <p className="text-sm">{form.getValues("persona_text")}</p>
@@ -412,33 +474,25 @@ export function StudioOnboarding({ address, onComplete }: Props) {
               </CardHeader>
               <CardContent className="space-y-4 text-center">
                 <p className="text-sm text-muted-foreground">
-                  To prove you own <strong>{form.getValues("x_handle")}</strong>, tag our bot on X:
-                </p>
-                <div className="mx-auto max-w-sm rounded-xl border border-primary/20 bg-primary/5 p-4">
-                  <p className="font-mono text-sm">
-                    @RailMintAI verify {form.getValues("x_handle")}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Our bot will detect the mention and mark your account as verified.
-                  You can also do this later from your Profile settings.
+                  Connect your X account via OAuth to prove you own it.
+                  This links your wallet to your real X identity.
                 </p>
                 <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-                  <Button
-                    onClick={() => {
-                      const handle = form.getValues("x_handle").replace("@", "");
-                      const text = encodeURIComponent(`@RailMintAI verify @${handle}`);
-                      window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank");
-                    }}
-                    className="gap-2"
-                  >
-                    <Bot className="h-4 w-4" />
-                    Tag Bot on X
+                  <Button onClick={handleVerifyX} disabled={verifyingX} className="gap-2">
+                    {verifyingX ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Twitter className="h-4 w-4" />
+                    )}
+                    {verifyingX ? "Verifying..." : "Verify with X"}
                   </Button>
                   <Button variant="outline" onClick={onComplete}>
                     Skip for now →
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground">
+                  You can also verify later from your Profile settings.
+                </p>
               </CardContent>
             </Card>
           </motion.div>
