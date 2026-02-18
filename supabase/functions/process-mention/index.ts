@@ -13,6 +13,9 @@ const corsHeaders = {
 		"authorization, x-client-info, apikey, content-type, x-signature, x-timestamp, x-nonce, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const UNVERIFIED_USER_PROMPT =
+	"To publish and earn rewards, create your persona at railmint.app and verify your account. Quick setup, big potential!";
+
 type MentionIntent = "publish" | "ask" | "donate" | "unknown";
 
 type ParsedMention = {
@@ -283,6 +286,30 @@ async function fetchCreatorByHandle(supabase: any, xHandle?: string | null) {
 	return data;
 }
 
+async function lookupVerifiedCreator(
+	supabase: any,
+	authorHandle?: string | null,
+) {
+	const normalizedHandle = normalizeHandle(authorHandle);
+	if (!normalizedHandle) {
+		return { found: false, verified: false, creator: null };
+	}
+
+	const { data: creator } = await supabase
+		.from("creators")
+		.select(
+			"id, x_handle, x_verified, persona_text, prompt_template, clone_name",
+		)
+		.eq("x_handle", normalizedHandle)
+		.maybeSingle();
+
+	return {
+		found: !!creator,
+		verified: creator?.x_verified === true,
+		creator: creator || null,
+	};
+}
+
 async function fetchOpenEpoch(supabase: any) {
 	const { data } = await supabase
 		.from("epochs")
@@ -488,6 +515,69 @@ async function buildAiReply(params: {
 	}
 }
 
+async function buildPersonalizedReply(params: {
+	creator: {
+		clone_name: string;
+		persona_text: string | null;
+		prompt_template: string | null;
+	};
+	mentionText: string;
+	intentContext?: string | null;
+}) {
+	const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+	if (!openRouterKey) {
+		throw new Error("OPENROUTER_API_KEY is not configured");
+	}
+
+	const systemPrompt =
+		params.creator.prompt_template ||
+		`You are ${params.creator.clone_name}. ${params.creator.persona_text || ""}`;
+
+	const contextLines = [
+		`Mention text: ${params.mentionText}`,
+		params.intentContext ? `Context: ${params.intentContext}` : null,
+	].filter(Boolean);
+
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+	try {
+		const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			signal: controller.signal,
+			headers: {
+				Authorization: `Bearer ${openRouterKey}`,
+				"Content-Type": "application/json",
+				"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+				"X-Title": "RailMintAI",
+			},
+			body: JSON.stringify({
+				model: "google/gemini-2.5-flash",
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: contextLines.join("\n") },
+				],
+			}),
+		});
+
+		if (!aiRes.ok) {
+			const errText = await aiRes.text();
+			throw new Error(
+				`OpenRouter error ${aiRes.status}: ${errText.slice(0, 200)}`,
+			);
+		}
+
+		const aiData = await aiRes.json();
+		const coreText =
+			aiData.choices?.[0]?.message?.content?.toString().trim() || "";
+		if (!coreText) throw new Error("Empty OpenRouter reply");
+
+		return limitReplyText(coreText);
+	} finally {
+		clearTimeout(timeoutId);
+	}
+}
+
 async function replyViaTweetApi(params: { text: string; replyToId: string }) {
 	const apiKey = Deno.env.get("TWEETIO_API_KEY");
 	const apiBase =
@@ -677,6 +767,89 @@ Deno.serve(async (req: Request) => {
 		}
 
 		const parsed = parseMention(processingText);
+
+		// Early verification gate: Check if author is a verified creator
+		const verificationResult = await lookupVerifiedCreator(
+			supabase,
+			processingAuthorHandle,
+		);
+
+		// If not verified, return UNVERIFIED_USER_PROMPT immediately
+		if (!verificationResult.found || !verificationResult.verified) {
+			// Create mention record in "processed" state with unverified response
+			const { data: mentionInsert } = await supabase
+				.from("mentions")
+				.insert({
+					mention_id: mentionId,
+					status: "processed",
+					raw_text: processingText,
+					author_handle: processingAuthorHandle,
+					author_wallet: processingAuthorWallet,
+					parsed_intent: "unverified_prompt",
+					payload: {
+						...basePayload,
+						intent: "unverified_prompt",
+					},
+					processed_at: new Date().toISOString(),
+				})
+				.select("id")
+				.single();
+
+			if (mentionInsert?.id) {
+				mentionDbId = mentionInsert.id;
+			}
+
+			// Reply with verification prompt if applicable
+			if (replyWithAi && replyViaTwitterApiFlag && replyToId) {
+				try {
+					const replyResult = await replyViaTweetApi({
+						text: UNVERIFIED_USER_PROMPT,
+						replyToId,
+					});
+
+					await supabase
+						.from("mentions")
+						.update({
+							payload: {
+								...basePayload,
+								intent: "unverified_prompt",
+								x_reply_text: UNVERIFIED_USER_PROMPT,
+								x_reply_sent_at: new Date().toISOString(),
+								x_reply_result: replyResult,
+							},
+						})
+						.eq("id", mentionDbId);
+				} catch (replyError) {
+					const message =
+						replyError instanceof Error
+							? replyError.message
+							: "Failed to reply to unverified user";
+					await supabase
+						.from("mentions")
+						.update({
+							payload: {
+								...basePayload,
+								intent: "unverified_prompt",
+								x_reply_error: message,
+							},
+						})
+						.eq("id", mentionDbId);
+				}
+			}
+
+			return new Response(
+				JSON.stringify({
+					success: true,
+					mention_db_id: mentionDbId,
+					intent: "unverified_prompt",
+					reason: "creator not verified",
+				}),
+				{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
+			);
+		}
+
+		// Verified path: Continue with intent handling
+		const creator = verificationResult.creator;
 		const openEpoch = (await fetchOpenEpoch(supabase)) as any;
 		const actionPayload: Record<string, unknown> = {};
 
@@ -851,24 +1024,18 @@ Deno.serve(async (req: Request) => {
 
 		if (shouldReply && replyToId) {
 			try {
-				const mentionUrl =
-					typeof basePayload.tweet_url === "string"
-						? basePayload.tweet_url
-						: null;
 				const contextSummary =
 					typeof actionPayload.response === "string"
 						? actionPayload.response
 						: null;
-				const replyText = await buildAiReply({
-					target: {
-						replyToId,
-						authorHandle: processingAuthorHandle,
-						mentionText: processingText,
-						intent: parsed.intent,
-						mentionUrl,
-						contextSummary,
+				const replyText = await buildPersonalizedReply({
+					creator: creator as {
+						clone_name: string;
+						persona_text: string | null;
+						prompt_template: string | null;
 					},
-					ctaText: Deno.env.get("X_REPLY_CTA"),
+					mentionText: processingText,
+					intentContext: contextSummary || undefined,
 				});
 
 				const replyResult = await replyViaTweetApi({
