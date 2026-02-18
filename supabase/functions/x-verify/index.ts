@@ -141,14 +141,14 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Creator not found for this wallet" }, 404);
     }
 
-    // Verify the X handle matches what the creator registered (case-insensitive)
-    if (creator.x_handle && creator.x_handle.toLowerCase() !== handle.toLowerCase()) {
+    // If the creator already has a verified X handle that doesn't match, block the re-link
+    if (creator.x_verified && creator.x_handle && creator.x_handle.toLowerCase() !== handle.toLowerCase()) {
       await logActivity(supabase, wallet_address, "x_verify_handle_mismatch", {
         registered: creator.x_handle,
         actual: handle,
       });
       return json({
-        error: `X account @${xUsername} does not match registered handle ${creator.x_handle}. Update your handle first.`,
+        error: `X account @${xUsername} does not match the already-verified handle ${creator.x_handle}.`,
       }, 400);
     }
 
