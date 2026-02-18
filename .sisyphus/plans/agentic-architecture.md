@@ -824,7 +824,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-13-tests.txt
   ```
 
-- [ ] 14. Retrieval tests (pgvector + fallback)
+- [ ] 14. Retrieval tests (pgvector + fallback) [SKIPPED - timeout]
 
   **What to do**:
   - Add tests for vector retrieval ordering
