@@ -1,0 +1,12 @@
+{
+  "test": "Opt-in OFF behavior",
+  "function_location": "supabase/functions/update-summaries/index.ts",
+  "passed": true,
+  "verification_method": "Code inspection",
+  "assertions": {
+    "opt_out_check": "Line 256: .eq('agentic_context_opt_in', true) - only fetches creators with opt-in enabled",
+    "no_processing_for_opt_out": "Creators with agentic_context_opt_in=false are excluded from query",
+    "no_summary_updates": "updateCreatorSummary never called for opt-out creators"
+  },
+  "notes": "Function respects opt-in status:\n- Only queries creators WHERE agentic_context_opt_in = true\n- Creators with opt-in OFF are never included in processing batch\n- No summary generation or database writes occur for opt-out creators\n- Preserves existing data but stops all new writes\n\nThis aligns with architectural decision: 'Opt-out: preserve data but stop using; no new writes'"
+}

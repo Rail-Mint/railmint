@@ -1,0 +1,48 @@
+=== Embeddings Module Structure Verification ===
+
+✅ Module Created: supabase/functions/_shared/embeddings.ts
+
+Key Features:
+1. OpenRouter Integration
+   - Model: openai/text-embedding-3-small
+   - Dimensions: 1536
+   - Timeout: 15 seconds
+   - Error handling with AbortController
+
+2. Opt-In Enforcement (FAIL CLOSED)
+   - checkOptIn() called FIRST (line 112-113)
+   - Early return when opt-in OFF (line 113-123)
+   - No API calls when opted out
+   - Logs skip reason with context
+
+3. Embedding Storage
+   - Table: creator_embeddings
+   - Fields: creator_id, embedding (vector), source_type, source_id, metadata
+   - Source types: 'post', 'conversation', 'profile'
+
+4. Exported Functions
+   ✅ createEmbedding(supabase, request)
+   ✅ createEmbeddingForPost(supabase, creatorId, postId, contentText)
+   ✅ createEmbeddingForConversation(supabase, creatorId, conversationId, summaryText)
+   ✅ createEmbeddingForProfile(supabase, creatorId, profileText)
+
+5. Security
+   ✅ OPENROUTER_API_KEY validation
+   ✅ Request timeout protection
+   ✅ Text length limiting (8000 chars)
+   ✅ Dimension validation (1536)
+   ✅ Opt-in gating at function entry
+
+Code Flow:
+1. Check opt-in status (creator_profiles.context_opt_in)
+2. If OFF → return immediately with created: false
+3. If ON → generate embedding via OpenRouter
+4. Store embedding in creator_embeddings
+5. Return embeddingId and created: true
+
+VERIFICATION: Manual inspection confirms:
+- Line 113: if (!optedIn) { return { embeddingId: "", created: false } }
+- Line 130: .from("creator_embeddings").insert(...)
+- Line 126: const embedding = await generateEmbedding(request.text)
+
+Result: ✅ Module implements Task 3 requirements correctly

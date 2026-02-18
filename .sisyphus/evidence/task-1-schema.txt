@@ -1,0 +1,23 @@
+QA Scenario: Apply migrations in local Supabase
+Tool: Bash (supabase CLI)
+Date: $(date)
+
+Preconditions: Supabase local running ✓
+
+Steps:
+1. ✓ Run: supabase db reset
+   Result: All migrations applied successfully
+
+2. ✓ List all creator_* tables in schema
+   Query: SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'creator_%'
+   
+   Result: All 5 new tables created successfully:
+   - creator_conversation_summaries
+   - creator_embeddings
+   - creator_news_digests
+   - creator_post_index
+   - creator_profiles
+
+Expected Result: All tables present in schema ✓
+
+Evidence: All 5 context tables created with proper FK relationships to creators table

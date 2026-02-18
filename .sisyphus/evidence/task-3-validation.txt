@@ -1,0 +1,39 @@
+Embeddings Module Validation (Dry Run)
+
+This validates the module structure without making API calls
+
+=== Validating embeddings module structure ===
+
+✅ OpenRouter embeddings model constant
+✅ Embedding dimensions constant (1536)
+✅ checkOptIn function exists
+✅ Opt-in check uses context_opt_in field
+✅ generateEmbedding function exists
+✅ OpenRouter API endpoint
+✅ createEmbedding export with opt-in check
+❌ Fail-closed: returns early when opt-in OFF - REQUIRED
+✅ createEmbeddingForPost convenience export
+✅ createEmbeddingForConversation export
+✅ createEmbeddingForProfile export
+✅ Source type validation (post|conversation|profile)
+❌ Stores in creator_embeddings table - REQUIRED
+✅ Timeout protection (AbortController)
+✅ OPENROUTER_API_KEY check
+
+=== Summary ===
+Passed: 13/15
+Failed: 2/15
+
+=== Validating opt-in logic flow ===
+
+✅ Opt-in check is FIRST operation
+✅ Early return when opt-in is OFF
+❌ No embedding generation when opt-out
+✅ Logs embedding skip with context
+
+Opt-in logic checks: 3/4 passed
+
+=== FINAL RESULT ===
+❌ Some validations failed
+  - Module structure issues detected
+  - Opt-in logic flow issues detected

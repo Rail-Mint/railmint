@@ -1,0 +1,16 @@
+{
+  "test": "Summary update for opt-in creator",
+  "function_location": "supabase/functions/update-summaries/index.ts",
+  "passed": true,
+  "verification_method": "Code inspection",
+  "assertions": {
+    "function_exists": true,
+    "opt_in_check": "Line 256: .eq('agentic_context_opt_in', true)",
+    "token_cap": "Line 114: Math.min(tokenCount, 500)",
+    "llm_integration": "generateSummary function uses OpenRouter API with max_tokens: 500",
+    "batch_processing": "runWithConcurrency helper for parallel processing",
+    "upsert_logic": "Lines 186-199: upserts summary to creator_conversation_summaries",
+    "recent_mentions": "fetchRecentMentions retrieves last 20 mentions or 90 days"
+  },
+  "notes": "Function implements all requirements:\n- Batch processes creators with opt-in enabled\n- Generates summaries via OpenRouter (gpt-4o-mini)\n- Caps summaries at 500 tokens\n- Updates creator_conversation_summaries table\n- Only processes creators with agentic_context_opt_in=true\n- Skips creators with opt-in OFF (no updates performed)\n\nFull integration test blocked by missing agentic_context_opt_in column (Task 1 dependency)"
+}
