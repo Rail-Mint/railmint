@@ -1,22 +1,4 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageLoader } from "@/components/ui/page-loader";
-import {
-	Popover,
-	PopoverContent,
-	PopoverTrigger,
-} from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { XIcon } from "@/components/ui/x-icon";
-import { useToast } from "@/hooks/use-toast";
-import { useContractStatus } from "@/hooks/useContractStatus";
-import { supabase } from "@/integrations/supabase/client";
-import {
-	computeContentHash,
-	computeMetaHash,
-	computePromptHash,
-} from "@/lib/mock-contract";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { formatDistanceToNow } from "date-fns";
 import {
 	ArrowLeft,
@@ -40,7 +22,34 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAccount } from "wagmi";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { PageLoader } from "@/components/ui/page-loader";
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { XIcon } from "@/components/ui/x-icon";
+import { useToast } from "@/hooks/use-toast";
+import { useContractStatus } from "@/hooks/useContractStatus";
 import { useSignedAction } from "@/hooks/useSignedAction";
+import { supabase } from "@/integrations/supabase/client";
+import {
+	computeContentHash,
+	computeMetaHash,
+	computePromptHash,
+} from "@/lib/mock-contract";
 
 interface Creator {
 	id: string;
@@ -131,6 +140,7 @@ export default function PostDetail() {
 
 	const { id } = useParams<{ id: string }>();
 	const { address } = useAccount();
+	const { openConnectModal } = useConnectModal();
 	const { toast } = useToast();
 	const { mode: contractMode } = useContractStatus();
 	const { invokeWithSignature } = useSignedAction();
@@ -151,6 +161,7 @@ export default function PostDetail() {
 	const [readerMode, setReaderMode] = useState(true);
 	const [proofBehaviorCount, setProofBehaviorCount] = useState(0);
 	const [showOnboardingTip, setShowOnboardingTip] = useState(false);
+	const [showAuthDialog, setShowAuthDialog] = useState(false);
 
 	const tabSessionKey = id ? `railmindai.post-tab.${id}` : null;
 
@@ -259,22 +270,34 @@ export default function PostDetail() {
 
 	async function toggleLike() {
 		if (!address) {
-			toast({ title: "Connect wallet to like", variant: "destructive" });
+			setShowAuthDialog(true);
 			return;
 		}
 
 		try {
 			if (liked) {
-				await invokeWithSignature("toggle-like", { post_id: id, action: "unlike" }, address);
+				await invokeWithSignature(
+					"toggle-like",
+					{ post_id: id, action: "unlike" },
+					address,
+				);
 				setLiked(false);
 				setLikeCount((count) => Math.max(0, count - 1));
 			} else {
-				await invokeWithSignature("toggle-like", { post_id: id, action: "like" }, address);
+				await invokeWithSignature(
+					"toggle-like",
+					{ post_id: id, action: "like" },
+					address,
+				);
 				setLiked(true);
 				setLikeCount((count) => count + 1);
 			}
 		} catch (err) {
-			toast({ title: "Like failed", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
+			toast({
+				title: "Like failed",
+				description: err instanceof Error ? err.message : "Failed",
+				variant: "destructive",
+			});
 		}
 	}
 
@@ -495,6 +518,28 @@ export default function PostDetail() {
 
 	return (
 		<div className="container mx-auto max-w-8xl py-6 md:py-10 pr-4 md:pr-6">
+			<Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect to like posts</DialogTitle>
+						<DialogDescription>
+							Guests need to connect a wallet to like content. It only takes a
+							moment.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button
+							onClick={() => {
+								setShowAuthDialog(false);
+								openConnectModal?.();
+							}}
+							disabled={!openConnectModal}
+						>
+							Connect wallet
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 			<section className="relative mb-6 overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-br from-background/95 via-background/90 to-amber-50/30 p-4 shadow-lg md:p-6">
 				<div className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.24),_transparent_70%)] blur-xl" />
 				<div className="pointer-events-none absolute -left-10 bottom-3 h-24 w-24 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_75%)] blur-xl" />
@@ -774,7 +819,9 @@ export default function PostDetail() {
 
 							<div
 								className="grid gap-2"
-								style={{ gridTemplateColumns: `repeat(${checks.length}, minmax(0, 1fr))` }}
+								style={{
+									gridTemplateColumns: `repeat(${checks.length}, minmax(0, 1fr))`,
+								}}
 							>
 								{checks.map((check) => (
 									<div
@@ -948,8 +995,10 @@ export default function PostDetail() {
 													</p>
 												</div>
 												<code className="text-[11px] font-mono text-foreground">
-													{post.creator?.wallet_address?.slice(0, 8)}...
-													{post.creator?.wallet_address?.slice(-6)}
+													{shortAddress(
+														creator?.wallet_address ??
+															post.creator?.wallet_address,
+													)}
 												</code>
 											</div>
 											<div className="rounded-lg border border-border/50 bg-background/60 p-3">

@@ -1,3 +1,4 @@
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { formatDistanceToNow } from "date-fns";
 import { motion } from "framer-motion";
 import {
@@ -13,7 +14,6 @@ import {
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAccount } from "wagmi";
-import { useSignedAction } from "@/hooks/useSignedAction";
 import { PublicJourneyStrip } from "@/components/layout/PublicJourneyStrip";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,14 @@ import {
 	CardFooter,
 	CardHeader,
 } from "@/components/ui/card";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { PageLoader } from "@/components/ui/page-loader";
 import {
 	Select,
@@ -32,6 +40,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useSignedAction } from "@/hooks/useSignedAction";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Post {
@@ -46,6 +55,7 @@ interface Post {
 		clone_name: string;
 		wallet_address: string;
 		x_handle: string | null;
+		x_verified: boolean | null;
 	};
 	like_count: number;
 	liked_by_me: boolean;
@@ -68,6 +78,7 @@ const cardReveal = {
 
 export default function Feed() {
 	const { address } = useAccount();
+	const { openConnectModal } = useConnectModal();
 	const { toast } = useToast();
 	const navigate = useNavigate();
 	const { invokeWithSignature } = useSignedAction();
@@ -85,6 +96,7 @@ export default function Feed() {
 	);
 	const [likingPostId, setLikingPostId] = useState<string | null>(null);
 	const [hasCreatorProfile, setHasCreatorProfile] = useState(false);
+	const [showAuthDialog, setShowAuthDialog] = useState(false);
 
 	useEffect(() => {
 		void loadData();
@@ -95,9 +107,12 @@ export default function Feed() {
 
 		let postQuery = supabase
 			.from("posts")
-			.select("*, creator:creators(clone_name, wallet_address, x_handle)", {
-				count: "exact",
-			})
+			.select(
+				"*, creator:creators(clone_name, wallet_address, x_handle, x_verified)",
+				{
+					count: "exact",
+				},
+			)
 			.order("created_at", { ascending: false })
 			.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
@@ -181,11 +196,7 @@ export default function Feed() {
 
 	async function toggleLike(postId: string, liked: boolean) {
 		if (!address) {
-			toast({
-				title: "Connect wallet",
-				description: "You need to connect your wallet to like posts.",
-				variant: "destructive",
-			});
+			setShowAuthDialog(true);
 			return;
 		}
 
@@ -201,9 +212,17 @@ export default function Feed() {
 		if (liked) {
 			// Unlike via signed edge function
 			try {
-				await invokeWithSignature("toggle-like", { post_id: postId, action: "unlike" }, address);
+				await invokeWithSignature(
+					"toggle-like",
+					{ post_id: postId, action: "unlike" },
+					address,
+				);
 			} catch (err) {
-				toast({ title: "Unlike failed", description: err instanceof Error ? err.message : "Failed", variant: "destructive" });
+				toast({
+					title: "Unlike failed",
+					description: err instanceof Error ? err.message : "Failed",
+					variant: "destructive",
+				});
 				return;
 			}
 
@@ -226,7 +245,11 @@ export default function Feed() {
 
 				setLikingPostId(postId);
 
-				await invokeWithSignature("toggle-like", { post_id: postId, action: "like" }, address);
+				await invokeWithSignature(
+					"toggle-like",
+					{ post_id: postId, action: "like" },
+					address,
+				);
 
 				// On-chain like only if contracts are deployed (UUID cannot be BigInt)
 				// Skip on-chain call -- contract addresses are not configured yet
@@ -286,6 +309,28 @@ export default function Feed() {
 			transition={{ duration: 0.3, ease: "easeOut" }}
 			className="container py-6 sm:py-8 md:py-10"
 		>
+			<Dialog open={showAuthDialog} onOpenChange={setShowAuthDialog}>
+				<DialogContent className="max-w-md">
+					<DialogHeader>
+						<DialogTitle>Connect to like posts</DialogTitle>
+						<DialogDescription>
+							Guests need to connect a wallet to like content. It only takes a
+							moment.
+						</DialogDescription>
+					</DialogHeader>
+					<DialogFooter>
+						<Button
+							onClick={() => {
+								setShowAuthDialog(false);
+								openConnectModal?.();
+							}}
+							disabled={!openConnectModal}
+						>
+							Connect wallet
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 			<section className="relative mb-6 overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-background/95 via-background/90 to-amber-50/40 p-5 shadow-[0_18px_70px_-34px_rgba(245,158,11,0.55)] sm:mb-8 md:p-7">
 				<div className="pointer-events-none absolute -top-20 right-[-4.5rem] h-52 w-52 rounded-full bg-[radial-gradient(circle,_rgba(245,158,11,0.22),_transparent_70%)] blur-2xl" />
 				<div className="pointer-events-none absolute -left-14 top-14 h-36 w-36 rounded-full bg-[radial-gradient(circle,_rgba(251,191,36,0.18),_transparent_72%)] blur-xl" />
@@ -407,6 +452,14 @@ export default function Feed() {
 																className="gap-1 border-primary/35 bg-primary/10 text-[11px]"
 															>
 																<Shield className="h-3 w-3" /> Verified
+															</Badge>
+														) : null}
+														{post.creator?.x_verified ? (
+															<Badge
+																variant="secondary"
+																className="border border-sky-500/30 bg-sky-500/10 text-[11px] text-sky-700 dark:text-sky-200"
+															>
+																X Verified
 															</Badge>
 														) : null}
 														{post.is_fallback ? (

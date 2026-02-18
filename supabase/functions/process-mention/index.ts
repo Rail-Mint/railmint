@@ -33,6 +33,15 @@ type ContentAnalysis = {
 	contentTags: string[];
 };
 
+type ReplyTarget = {
+	replyToId: string;
+	authorHandle?: string | null;
+	mentionText: string;
+	intent: MentionIntent;
+	mentionUrl?: string | null;
+	contextSummary?: string | null;
+};
+
 function normalizeHandle(value?: string | null): string | null {
 	if (!value) return null;
 	const cleaned = value.trim().toLowerCase();
@@ -112,6 +121,12 @@ function analyzeContent(content: string): ContentAnalysis {
 		qualityFlags,
 		contentTags: Array.from(tags),
 	};
+}
+
+function limitReplyText(text: string): string {
+	const normalized = text.trim();
+	if (normalized.length <= 275) return normalized;
+	return `${normalized.slice(0, 272)}...`;
 }
 
 function parseMention(rawText: string): ParsedMention {
@@ -198,7 +213,9 @@ async function verifyWebhookSignature(params: {
 }) {
 	const secret = Deno.env.get("X_WEBHOOK_SECRET");
 	if (!secret) {
-		throw new Error("X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed");
+		throw new Error(
+			"X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed",
+		);
 	}
 
 	const signature = params.req.headers.get("x-signature")?.trim();
@@ -255,10 +272,7 @@ async function verifyWebhookSignature(params: {
 		.lt("expires_at", new Date().toISOString());
 }
 
-async function fetchCreatorByHandle(
-	supabase: any,
-	xHandle?: string | null,
-) {
+async function fetchCreatorByHandle(supabase: any, xHandle?: string | null) {
 	const normalizedHandle = normalizeHandle(xHandle);
 	if (!normalizedHandle) return null;
 	const { data } = await supabase
@@ -292,13 +306,25 @@ async function createPostFromMention(params: {
 	const postId = crypto.randomUUID();
 	const promptText = `X mention publish command ${params.sourceReference}`;
 	const promptHash = keccak256(
-		toBytes("GOODVIBES_PROMPT_V1\n" + postId + "\n" + params.creatorId + "\n" + promptText),
+		toBytes(
+			"GOODVIBES_PROMPT_V1\n" +
+				postId +
+				"\n" +
+				params.creatorId +
+				"\n" +
+				promptText,
+		),
 	);
 	const contentHash = keccak256(
 		toBytes("GOODVIBES_CONTENT_V1\n" + postId + "\n" + params.contentText),
 	);
 	const metaHash = keccak256(
-		toBytes("GOODVIBES_META_V1\nmention-publish\n" + createdAt + "\n" + params.creatorWallet),
+		toBytes(
+			"GOODVIBES_META_V1\nmention-publish\n" +
+				createdAt +
+				"\n" +
+				params.creatorWallet,
+		),
 	);
 	const commitTxHash = keccak256(
 		toBytes("mock-mention-commit-" + postId + "-" + Date.now()),
@@ -352,10 +378,7 @@ async function executeDonationTransfer(
 	return { status: "submitted" as const, txHash: tx.hash };
 }
 
-async function buildAskResponse(
-	supabase: any,
-	question: string,
-) {
+async function buildAskResponse(supabase: any, question: string) {
 	const mentionedHandle = question.match(/@[a-z0-9_]+/i)?.[0];
 	const creator = await fetchCreatorByHandle(supabase, mentionedHandle);
 
@@ -398,6 +421,108 @@ async function buildAskResponse(
 	return `Latest from ${creator.clone_name}: ${digest}`;
 }
 
+async function buildAiReply(params: {
+	target: ReplyTarget;
+	ctaText?: string | null;
+}) {
+	const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+	if (!openRouterKey) {
+		throw new Error("OPENROUTER_API_KEY is not configured");
+	}
+
+	const authorHandle = normalizeHandle(params.target.authorHandle) || "";
+	const cta = params.ctaText ? params.ctaText.trim() : "";
+	const safeCta = cta && !cta.startsWith(" ") ? ` ${cta}` : cta;
+
+	const systemPrompt =
+		"You are RailMint AI. Write a short, friendly reply in 1-2 sentences. " +
+		"No hashtags, no emojis, no markdown. Keep the reply concise and helpful.";
+
+	const contextLines = [
+		`Mention text: ${params.target.mentionText}`,
+		`Intent: ${params.target.intent}`,
+		params.target.contextSummary
+			? `Context: ${params.target.contextSummary}`
+			: null,
+		params.target.mentionUrl ? `Tweet URL: ${params.target.mentionUrl}` : null,
+	].filter(Boolean);
+
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+	try {
+		const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			method: "POST",
+			signal: controller.signal,
+			headers: {
+				Authorization: `Bearer ${openRouterKey}`,
+				"Content-Type": "application/json",
+				"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+				"X-Title": "RailMintAI",
+			},
+			body: JSON.stringify({
+				model: "google/gemini-2.5-flash",
+				messages: [
+					{ role: "system", content: systemPrompt },
+					{ role: "user", content: contextLines.join("\n") },
+				],
+			}),
+		});
+
+		if (!aiRes.ok) {
+			const errText = await aiRes.text();
+			throw new Error(
+				`OpenRouter error ${aiRes.status}: ${errText.slice(0, 200)}`,
+			);
+		}
+
+		const aiData = await aiRes.json();
+		const coreText =
+			aiData.choices?.[0]?.message?.content?.toString().trim() || "";
+		if (!coreText) throw new Error("Empty OpenRouter reply");
+
+		const reply = `${authorHandle} ${coreText}`.trim() + safeCta;
+		return limitReplyText(reply);
+	} finally {
+		clearTimeout(timeoutId);
+	}
+}
+
+async function replyViaTweetApi(params: { text: string; replyToId: string }) {
+	const apiKey = Deno.env.get("TWEETIO_API_KEY");
+	const apiBase =
+		Deno.env.get("TWEETIO_BASE_URL") || "https://api.twitterapi.io";
+	const loginCookies = Deno.env.get("TWITTERAPI_LOGIN_COOKIES");
+	const proxy = Deno.env.get("TWITTERAPI_PROXY");
+
+	if (!apiKey) throw new Error("Missing TWEETIO_API_KEY");
+	if (!loginCookies) throw new Error("Missing TWITTERAPI_LOGIN_COOKIES");
+	if (!proxy) throw new Error("Missing TWITTERAPI_PROXY");
+
+	const response = await fetch(`${apiBase}/twitter/create_tweet_v2`, {
+		method: "POST",
+		headers: {
+			"X-API-Key": apiKey,
+			"Content-Type": "application/json",
+		},
+		body: JSON.stringify({
+			login_cookies: loginCookies,
+			tweet_text: limitReplyText(params.text),
+			proxy,
+			reply_to_tweet_id: params.replyToId,
+		}),
+	});
+
+	const payload = await response.json().catch(() => ({}));
+	if (!response.ok) {
+		throw new Error(
+			`twitterapi.io reply failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`,
+		);
+	}
+
+	return payload as Record<string, unknown>;
+}
+
 Deno.serve(async (req: Request) => {
 	if (req.method === "OPTIONS")
 		return new Response(null, { headers: corsHeaders });
@@ -412,6 +537,9 @@ Deno.serve(async (req: Request) => {
 		const rawText = String(body.text || "").trim();
 		const deferProcessing = body.defer_processing === true;
 		const processPending = body.process_pending === true;
+		const replyWithAi = body.reply_with_ai === true;
+		const replyViaTwitterApiFlag = body.reply_via_twitterapi === true;
+		const replyToId = body.reply_to_id ? String(body.reply_to_id).trim() : null;
 		const authorHandle = normalizeHandle(body.author_handle);
 		const authorWallet = body.author_wallet
 			? String(body.author_wallet).trim()
@@ -549,7 +677,7 @@ Deno.serve(async (req: Request) => {
 		}
 
 		const parsed = parseMention(processingText);
-		const openEpoch = await fetchOpenEpoch(supabase) as any;
+		const openEpoch = (await fetchOpenEpoch(supabase)) as any;
 		const actionPayload: Record<string, unknown> = {};
 
 		if (parsed.intent === "publish") {
@@ -569,10 +697,10 @@ Deno.serve(async (req: Request) => {
 				throw new Error("Creator not found for publish command");
 			}
 
-		const publishContent = parsed.publishContent || processingText;
-		if (publishContent.length > 5000) {
-			throw new Error("Content exceeds maximum length of 5000 characters");
-		}
+			const publishContent = parsed.publishContent || processingText;
+			if (publishContent.length > 5000) {
+				throw new Error("Content exceeds maximum length of 5000 characters");
+			}
 			const { postId, analysis } = await createPostFromMention({
 				supabase,
 				creatorId: creator.id,
@@ -601,10 +729,10 @@ Deno.serve(async (req: Request) => {
 				);
 			}
 
-			const recipientCreator = await fetchCreatorByHandle(
+			const recipientCreator = (await fetchCreatorByHandle(
 				supabase,
 				parsed.donationTargetHandle,
-			) as any;
+			)) as any;
 			if (!recipientCreator) {
 				throw new Error("Recipient creator not found");
 			}
@@ -714,6 +842,52 @@ Deno.serve(async (req: Request) => {
 			actionPayload.response = response;
 		}
 
+		const agentHandle = normalizeHandle(Deno.env.get("X_AGENT_USERNAME"));
+		const shouldReply =
+			replyWithAi &&
+			replyViaTwitterApiFlag &&
+			Boolean(replyToId) &&
+			(!agentHandle || agentHandle !== processingAuthorHandle);
+
+		if (shouldReply && replyToId) {
+			try {
+				const mentionUrl =
+					typeof basePayload.tweet_url === "string"
+						? basePayload.tweet_url
+						: null;
+				const contextSummary =
+					typeof actionPayload.response === "string"
+						? actionPayload.response
+						: null;
+				const replyText = await buildAiReply({
+					target: {
+						replyToId,
+						authorHandle: processingAuthorHandle,
+						mentionText: processingText,
+						intent: parsed.intent,
+						mentionUrl,
+						contextSummary,
+					},
+					ctaText: Deno.env.get("X_REPLY_CTA"),
+				});
+
+				const replyResult = await replyViaTweetApi({
+					text: replyText,
+					replyToId,
+				});
+
+				actionPayload.x_reply_text = replyText;
+				actionPayload.x_reply_sent_at = new Date().toISOString();
+				actionPayload.x_reply_result = replyResult;
+			} catch (replyError) {
+				const message =
+					replyError instanceof Error
+						? replyError.message
+						: "Failed to reply to mention";
+				actionPayload.x_reply_error = message;
+			}
+		}
+
 		await supabase
 			.from("mentions")
 			.update({
@@ -737,7 +911,10 @@ Deno.serve(async (req: Request) => {
 			{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
 		);
 	} catch (error) {
-		console.error("process-mention error:", error instanceof Error ? error.message : "unknown");
+		console.error(
+			"process-mention error:",
+			error instanceof Error ? error.message : "unknown",
+		);
 
 		try {
 			if (mentionIdForFailure) {

@@ -92,11 +92,33 @@ async function fetchMentions(params: {
 	}
 
 	const payload = await response.json();
+	console.log("[sync-x-mentions] fetchMentions URL:", url.toString());
+	console.log(
+		"[sync-x-mentions] fetchMentions response status:",
+		response.status,
+	);
+	console.log(
+		"[sync-x-mentions] fetchMentions payload keys:",
+		payload ? Object.keys(payload) : "null",
+	);
+	console.log(
+		"[sync-x-mentions] fetchMentions payload.tweets?:",
+		Array.isArray(payload?.tweets),
+		"length:",
+		payload?.tweets?.length,
+	);
+	console.log(
+		"[sync-x-mentions] fetchMentions raw payload:",
+		JSON.stringify(payload).slice(0, 500),
+	);
 	if (Array.isArray(payload)) return payload as Record<string, unknown>[];
 	if (Array.isArray(payload?.tweets))
 		return payload.tweets as Record<string, unknown>[];
 	if (Array.isArray(payload?.data?.tweets))
 		return payload.data.tweets as Record<string, unknown>[];
+	console.log(
+		"[sync-x-mentions] fetchMentions: no tweets found in payload, returning []",
+	);
 	return [];
 }
 
@@ -225,23 +247,39 @@ Deno.serve(async (req: Request) => {
 	const syncApiKey = Deno.env.get("SYNC_API_KEY");
 	const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
 
-	const isServiceRole = serviceRoleKey && (authToken === serviceRoleKey || apikey === serviceRoleKey);
-	const isSyncKey = syncApiKey && (authToken === syncApiKey || apikey === syncApiKey);
+	const isServiceRole =
+		serviceRoleKey &&
+		(authToken === serviceRoleKey || apikey === serviceRoleKey);
+	const isSyncKey =
+		syncApiKey && (authToken === syncApiKey || apikey === syncApiKey);
 
 	if (!isServiceRole && !isSyncKey) {
 		return new Response(
 			JSON.stringify({ error: "Unauthorized. Provide a valid API key." }),
-			{ status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+			{
+				status: 401,
+				headers: { ...corsHeaders, "Content-Type": "application/json" },
+			},
 		);
 	}
 
 	try {
 		const body = await req.json().catch(() => ({}));
+		console.log(
+			"[sync-x-mentions] DEBUG: entered try block, body:",
+			JSON.stringify(body),
+		);
 
 		const tweetioApiKey = Deno.env.get("TWEETIO_API_KEY");
 		const tweetioBaseUrl =
 			Deno.env.get("TWEETIO_BASE_URL") || "https://api.twitterapi.io";
 		const xAgentUserName = Deno.env.get("X_AGENT_USERNAME");
+		console.log(
+			"[sync-x-mentions] DEBUG: env check — TWEETIO_API_KEY:",
+			tweetioApiKey ? "SET" : "MISSING",
+			"X_AGENT_USERNAME:",
+			xAgentUserName || "MISSING",
+		);
 		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 		const supabaseUrl = Deno.env.get("SUPABASE_URL");
 		const processMentionUrl =
@@ -310,6 +348,9 @@ Deno.serve(async (req: Request) => {
 					text,
 					author_handle: authorHandle,
 					defer_processing: queueOnly,
+					reply_with_ai: !queueOnly,
+					reply_via_twitterapi: !queueOnly,
+					reply_to_id: mentionId,
 					payload: {
 						source: "tweetio",
 						raw_tweet: tweet,

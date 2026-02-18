@@ -15,6 +15,9 @@ verify_jwt = false
 [functions.sync-x-mentions]
 verify_jwt = false
 
+[functions.webhook-x-mention]
+verify_jwt = false
+
 [functions.drain-mention-queue]
 verify_jwt = false
 
@@ -34,4 +37,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.x-oauth-start]
+verify_jwt = false
+
+[functions.add-x-monitor]
 verify_jwt = false

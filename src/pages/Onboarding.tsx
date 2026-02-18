@@ -1,13 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { Bot, CheckCircle2, Loader2, Sparkles, Wand2, X, Zap } from "lucide-react";
+import {
+	Bot,
+	CheckCircle2,
+	Loader2,
+	Sparkles,
+	Wand2,
+	X,
+	Zap,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { keccak256, toHex } from "viem";
 import { useAccount, useDisconnect } from "wagmi";
 import { z } from "zod";
-import { useSignedAction } from "@/hooks/useSignedAction";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,11 +38,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { XIcon } from "@/components/ui/x-icon";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useToast } from "@/hooks/use-toast";
-import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { useContractStatus } from "@/hooks/useContractStatus";
+import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
+import { useSignedAction } from "@/hooks/useSignedAction";
 import { supabase } from "@/integrations/supabase/client";
 import { buildXOAuthUrl } from "@/lib/x-oauth";
-
 
 const schema = z.object({
 	clone_name: z.string().min(2, "Clone name must be at least 2 characters"),
@@ -569,7 +576,7 @@ export default function Onboarding() {
 
 	async function moveNext() {
 		if (step === 1) {
-		const valid = await form.trigger(["clone_name"]);
+			const valid = await form.trigger(["clone_name"]);
 			if (!valid) return;
 			setStep(2);
 			return;
@@ -638,16 +645,21 @@ export default function Onboarding() {
 					});
 				}
 			} else {
-				console.info("[Onboarding] Contracts not deployed, skipping on-chain registration");
+				console.info(
+					"[Onboarding] Contracts not deployed, skipping on-chain registration",
+				);
 			}
 
 			// Always save to Supabase as fallback/backup
-			const data = await invokeWithSignature("upsert-creator", {
-				x_handle: null,
-				clone_name: values.clone_name,
-				persona_text: values.persona_text,
-				prompt_template: values.prompt_template,
-			}, address);
+			const data = await invokeWithSignature(
+				"upsert-creator",
+				{
+					clone_name: values.clone_name,
+					persona_text: values.persona_text,
+					prompt_template: values.prompt_template,
+				},
+				address,
+			);
 			const error = data?.error ? new Error(data.error) : null;
 
 			if (error) throw error;
@@ -690,20 +702,35 @@ export default function Onboarding() {
 		if (!address) return;
 		setVerifyingX(true);
 		try {
-			const redirectUri = "https://railmint.lovable.app/studio/profile";
+			const redirectUri = `${window.location.origin}/studio/profile`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
-			const width = 500, height = 660;
+			const width = 500,
+				height = 660;
 			const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-			const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-			const popup = window.open(authUrl, "x_oauth", `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`);
+			const top = Math.round(
+				window.screenY + (window.outerHeight - height) / 2,
+			);
+			const popup = window.open(
+				authUrl,
+				"x_oauth",
+				`width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`,
+			);
 			if (!popup) {
-				toast({ title: "Popup blocked", description: "Please allow popups for this site.", variant: "destructive" });
+				toast({
+					title: "Popup blocked",
+					description: "Please allow popups for this site.",
+					variant: "destructive",
+				});
 				setVerifyingX(false);
 				return;
 			}
 			popupRef.current = popup;
 		} catch (err: any) {
-			toast({ title: "Verification failed", description: err.message || "Could not start X verification", variant: "destructive" });
+			toast({
+				title: "Verification failed",
+				description: err.message || "Could not start X verification",
+				variant: "destructive",
+			});
 			setVerifyingX(false);
 		}
 	}, [address, toast]);
@@ -712,7 +739,12 @@ export default function Onboarding() {
 	useEffect(() => {
 		if (step !== 5) return;
 
-		const handleOAuthMessage = async (message: { type: string; code?: string; state?: string; error?: string }) => {
+		const handleOAuthMessage = async (message: {
+			type: string;
+			code?: string;
+			state?: string;
+			error?: string;
+		}) => {
 			if (!message.type?.startsWith("x-oauth")) return;
 			if (oauthHandledRef.current) return;
 			oauthHandledRef.current = true;
@@ -721,7 +753,11 @@ export default function Onboarding() {
 			popupRef.current = null;
 
 			if (message.type === "x-oauth-error") {
-				toast({ title: "Verification failed", description: message.error || "X OAuth error", variant: "destructive" });
+				toast({
+					title: "Verification failed",
+					description: message.error || "X OAuth error",
+					variant: "destructive",
+				});
 				setVerifyingX(false);
 				return;
 			}
@@ -730,13 +766,21 @@ export default function Onboarding() {
 				const { code, state } = message;
 				const savedState = localStorage.getItem("x_oauth_state");
 				if (state !== savedState) {
-					toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
+					toast({
+						title: "Verification failed",
+						description: "Invalid OAuth state",
+						variant: "destructive",
+					});
 					setVerifyingX(false);
 					return;
 				}
 				const codeVerifier = localStorage.getItem("x_oauth_verifier");
 				if (!codeVerifier) {
-					toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
+					toast({
+						title: "Verification failed",
+						description: "Missing PKCE verifier",
+						variant: "destructive",
+					});
 					setVerifyingX(false);
 					return;
 				}
@@ -744,16 +788,27 @@ export default function Onboarding() {
 				localStorage.removeItem("x_oauth_verifier");
 
 				try {
-					await invokeWithSignature("x-verify", {
-						code,
-						code_verifier: codeVerifier,
-						redirect_uri: "https://railmint.lovable.app/studio/profile",
-					}, address!);
+					await invokeWithSignature(
+						"x-verify",
+						{
+							code,
+							code_verifier: codeVerifier,
+							redirect_uri: `${window.location.origin}/studio/profile`,
+						},
+						address!,
+					);
 					setXVerified(true);
-					toast({ title: "X account verified!", description: "Your X account is now linked." });
+					toast({
+						title: "X account verified!",
+						description: "Your X account is now linked.",
+					});
 					setStep(6);
 				} catch (err: any) {
-					toast({ title: "Verification failed", description: err.message || "Could not verify X account", variant: "destructive" });
+					toast({
+						title: "Verification failed",
+						description: err.message || "Could not verify X account",
+						variant: "destructive",
+					});
 				} finally {
 					setVerifyingX(false);
 				}
@@ -776,7 +831,9 @@ export default function Onboarding() {
 			const raw = localStorage.getItem("x_oauth_result");
 			if (raw) {
 				localStorage.removeItem("x_oauth_result");
-				try { handleOAuthMessage(JSON.parse(raw)); } catch {}
+				try {
+					handleOAuthMessage(JSON.parse(raw));
+				} catch {}
 			}
 		}, 500);
 
@@ -786,7 +843,6 @@ export default function Onboarding() {
 			clearInterval(pollInterval);
 		};
 	}, [step, address, invokeWithSignature, toast]);
-
 
 	if (step === 4) {
 		return (
@@ -876,11 +932,16 @@ export default function Onboarding() {
 						Verify Your X Account
 					</h1>
 					<p className="mx-auto mb-6 max-w-2xl text-muted-foreground">
-						Connect your X account via OAuth to prove you own it.
-						This links your wallet to your real X identity and unlocks the full creator experience.
+						Connect your X account via OAuth to prove you own it. This links
+						your wallet to your real X identity and unlocks the full creator
+						experience.
 					</p>
 					<div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
-						<Button onClick={handleVerifyX} disabled={verifyingX} className="gap-2 w-full sm:w-auto">
+						<Button
+							onClick={handleVerifyX}
+							disabled={verifyingX}
+							className="gap-2 w-full sm:w-auto"
+						>
 							{verifyingX ? (
 								<Loader2 className="h-4 w-4 animate-spin" />
 							) : (
@@ -888,7 +949,11 @@ export default function Onboarding() {
 							)}
 							{verifyingX ? "Verifying..." : "Verify with X"}
 						</Button>
-						<Button variant="outline" onClick={() => setStep(6)} className="w-full sm:w-auto">
+						<Button
+							variant="outline"
+							onClick={() => setStep(6)}
+							className="w-full sm:w-auto"
+						>
 							Skip for now →
 						</Button>
 					</div>
@@ -1053,7 +1118,7 @@ export default function Onboarding() {
 									</div>
 								</CardHeader>
 								<CardContent className="space-y-4">
-								<div className="grid gap-4">
+									<div className="grid gap-4">
 										<FormField
 											control={form.control}
 											name="clone_name"
@@ -1584,9 +1649,11 @@ export default function Onboarding() {
 										</div>
 									)}
 
-								<div className="grid gap-2 rounded-xl border border-border/70 bg-background/70 p-3">
+									<div className="grid gap-2 rounded-xl border border-border/70 bg-background/70 p-3">
 										<div>
-											<p className="text-xs text-muted-foreground">Clone Name</p>
+											<p className="text-xs text-muted-foreground">
+												Clone Name
+											</p>
 											<p className="font-medium">{form.watch("clone_name")}</p>
 										</div>
 									</div>

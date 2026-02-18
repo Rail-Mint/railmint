@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.mentions (
 
 ALTER TABLE public.mentions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage mentions" ON public.mentions;
 CREATE POLICY "Service role can manage mentions"
   ON public.mentions FOR ALL
   USING (true);
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS public.donations (
 
 ALTER TABLE public.donations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage donations" ON public.donations;
 CREATE POLICY "Service role can manage donations"
   ON public.donations FOR ALL
   USING (true);
@@ -63,6 +65,7 @@ CREATE TABLE IF NOT EXISTS public.donation_audit_log (
 
 ALTER TABLE public.donation_audit_log ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage donation audit log" ON public.donation_audit_log;
 CREATE POLICY "Service role can manage donation audit log"
   ON public.donation_audit_log FOR ALL
   USING (true);
@@ -75,6 +78,7 @@ CREATE TABLE IF NOT EXISTS public.webhook_nonces (
 
 ALTER TABLE public.webhook_nonces ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Service role can manage webhook nonces" ON public.webhook_nonces;
 CREATE POLICY "Service role can manage webhook nonces"
   ON public.webhook_nonces FOR ALL
   USING (true);
