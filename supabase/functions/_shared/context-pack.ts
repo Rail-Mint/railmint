@@ -153,6 +153,18 @@ export async function buildContextPack(
 	if (profile.specialties.length > 0) {
 		personaText += `\nSpecialties: ${profile.specialties.join(", ")}`;
 	}
+	if (profile.persona_text) {
+		personaText += `\n\n${profile.persona_text}`;
+	}
+
+	const rawPersonaTokens = estimateTokens(personaText);
+	const PERSONA_TOKEN_CAP = 500;
+	if (rawPersonaTokens > PERSONA_TOKEN_CAP) {
+		const targetLength = Math.floor(
+			personaText.length * (PERSONA_TOKEN_CAP / rawPersonaTokens),
+		);
+		personaText = personaText.substring(0, targetLength);
+	}
 
 	// Calculate token counts for each section
 	const personaTokens = estimateTokens(personaText);

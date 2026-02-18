@@ -742,3 +742,71 @@ process-mention → lookupVerifiedCreator
 
 ---
 
+
+## Task 9: Context Pack in generate-post
+
+### Implementation
+- Added optional `context_pack` parameter to generate-post edge function
+- Follows identical pattern to process-mention (Task 8)
+- Context sections injected into OpenRouter system prompt when provided
+- Backward compatible (context_pack defaults to null)
+
+### Context Section Format
+All three sections use the same headers across both functions:
+1. `### YOUR IDENTITY` - persona text
+2. `### YOUR RECENT POSTS` - formatted post summaries  
+3. `### RELEVANT NEWS` - bullet list from news digests
+
+### Key Design Decisions
+- Context is provided by CLIENT, not fetched in generate-post
+- This keeps generate-post as a standalone API endpoint
+- Wallet signature verification and rate limiting unaffected
+- System prompt construction: base + optional context sections
+- Only appends context when contextLines array has content
+
+### Pattern Consistency
+Both process-mention and generate-post now share:
+- Same context pack structure
+- Same section headers and formatting
+- Same OpenRouter integration approach
+- This enables consistent persona-aware content generation
+
+### Testing Considerations
+- Test without context_pack (backward compatibility)
+- Test with full context_pack (all 3 sections)
+- Test with partial context_pack (e.g., only persona)
+- Verify context improves content relevance and consistency
+
+## Task 10: Persona Building Logic Enhancement
+
+### Implementation Details
+- **persona_text Integration**: Added persona_text from creators table to CreatorProfile type
+- **Two-Stage Fetch Pattern**: getProfile now fetches from both creator_profiles and creators tables
+  - First fetch: creator_profiles (structured fields)
+  - Second fetch: creators.persona_text
+  - Merged via spread operator with null fallback
+- **Merge Order**: bio → summary → tags → interests → specialties → persona_text
+- **Precedence**: Structured fields come first, persona_text appended last
+
+### Length Enforcement
+- **Cap**: 500 tokens maximum for persona section
+- **Method**: Proportional truncation via substring
+- **Formula**: `targetLength = textLength × (CAP / actualTokens)`
+- **Location**: context-pack.ts lines 160-167
+
+### Key Patterns
+- Use `?.` optional chaining for safe access to nullable fields
+- Conditional concatenation with `if (field) { text += ... }`
+- Token estimation before and after truncation for accurate budgeting
+- Spread operator for type-safe object merging
+
+### Testing Considerations
+- Empty/null persona_text handled gracefully
+- Under-cap scenarios: no truncation applied
+- Over-cap scenarios: proportional reduction maintains readability
+- Type safety maintained through CreatorProfile interface
+
+### Technical Decisions
+- Kept two separate queries rather than SQL join for cleaner type handling
+- Used substring truncation (simple) vs. word-boundary truncation (complex)
+- Placed persona_text last to preserve precedence of curated structured fields

@@ -1,0 +1,46 @@
+Task 9: Update generate-post to accept context_pack parameter
+
+COMPLETED CHANGES:
+==================
+
+File: supabase/functions/generate-post/index.ts
+
+1. Added context_pack parameter extraction (line 77):
+   - Extract optional context_pack from request body
+   - Backward compatible (defaults to null)
+
+2. Built context sections following Task 8 pattern (lines 189-221):
+   - ### YOUR IDENTITY (persona section)
+   - ### YOUR RECENT POSTS (post summaries)
+   - ### RELEVANT NEWS (news bullets)
+   - Only included when context_pack is provided
+
+3. Updated system prompt construction (lines 223-227):
+   - Base prompt with persona, word count, tone
+   - Appended context sections when available
+   - Maintains existing functionality when context_pack is absent
+
+4. Updated OpenRouter API call (lines 256-262):
+   - Use constructed systemPrompt instead of inline string
+   - Preserves all existing parameters
+
+VERIFICATION:
+=============
+
+✓ Wallet signature verification maintained (lines 79-97)
+✓ Rate limiting logic preserved (lines 124-128)
+✓ context_pack is optional (backward compatible)
+✓ Follows same injection pattern as process-mention
+✓ Context sections formatted identically to Task 8
+
+PATTERN CONSISTENCY:
+===================
+Task 8 (process-mention):
+  - Lines 599-623: Context pack injection
+  - Lines 638-644: OpenRouter call with context
+
+Task 9 (generate-post):
+  - Lines 189-221: Context pack injection (same structure)
+  - Lines 254-263: OpenRouter call with context (same structure)
+
+Both use identical section headers and formatting.

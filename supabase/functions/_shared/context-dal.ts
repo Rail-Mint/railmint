@@ -18,6 +18,7 @@ export type CreatorProfile = {
 	tags: string[];
 	interests: string[];
 	specialties: string[];
+	persona_text: string | null;
 	context_opt_in: boolean;
 	news_enabled: boolean;
 	news_topics: string[];
@@ -110,13 +111,24 @@ export async function getProfile(
 	const optedIn = await checkOptIn(supabase, creatorId);
 	if (!optedIn) return null;
 
-	const { data } = await supabase
+	const { data: profileData } = await supabase
 		.from("creator_profiles")
 		.select("*")
 		.eq("creator_id", creatorId)
 		.maybeSingle();
 
-	return data as CreatorProfile | null;
+	if (!profileData) return null;
+
+	const { data: creatorData } = await supabase
+		.from("creators")
+		.select("persona_text")
+		.eq("id", creatorId)
+		.maybeSingle();
+
+	return {
+		...profileData,
+		persona_text: creatorData?.persona_text || null,
+	} as CreatorProfile;
 }
 
 /**

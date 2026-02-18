@@ -74,13 +74,19 @@ Deno.serve(async (req: Request) => {
 		const wallet_address_raw = String(body.wallet_address || "").trim();
 		const signature = String(body.signature || "").trim();
 		const sign_timestamp = Number(body.sign_timestamp || 0);
+		const context_pack = body.context_pack || null;
 
 		// --- Wallet signature verification ---
 		if (!WALLET_RE.test(wallet_address_raw)) {
 			return json({ error: "Invalid wallet address format" }, 400);
 		}
 		if (!signature || !sign_timestamp) {
-			return json({ error: "Missing signature. Please sign the action with your wallet." }, 401);
+			return json(
+				{
+					error: "Missing signature. Please sign the action with your wallet.",
+				},
+				401,
+			);
 		}
 		if (Math.abs(Date.now() - sign_timestamp) > 300_000) {
 			return json({ error: "Signature expired. Please try again." }, 401);
@@ -180,6 +186,46 @@ Deno.serve(async (req: Request) => {
 
 		const promptText = creatorData.prompt_template.replace("{{topic}}", topic);
 
+		// Build context sections if context_pack is provided
+		const contextLines: string[] = [];
+		if (context_pack && typeof context_pack === "object") {
+			if (context_pack.persona) {
+				contextLines.push(`\n### YOUR IDENTITY\n${context_pack.persona}`);
+			}
+
+			if (
+				context_pack.posts &&
+				Array.isArray(context_pack.posts) &&
+				context_pack.posts.length > 0
+			) {
+				const postsSummary = context_pack.posts
+					.map(
+						(p: any) =>
+							`- ${p.topic || "General"}: ${p.post_content.substring(0, 100)}...`,
+					)
+					.join("\n");
+				contextLines.push(`\n### YOUR RECENT POSTS\n${postsSummary}`);
+			}
+
+			if (
+				context_pack.news &&
+				Array.isArray(context_pack.news) &&
+				context_pack.news.length > 0
+			) {
+				const newsSummary = context_pack.news[0].digest_bullets
+					.slice(0, 5)
+					.map((b: any) => `- ${b.text} (${b.source})`)
+					.join("\n");
+				contextLines.push(`\n### RELEVANT NEWS\n${newsSummary}`);
+			}
+		}
+
+		const baseSystemPrompt = `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write ${lengthGuide} words.${toneInstruction} Do not include any markdown formatting.`;
+		const systemPrompt =
+			contextLines.length > 0
+				? baseSystemPrompt + "\n" + contextLines.join("\n")
+				: baseSystemPrompt;
+
 		let contentText: string;
 		let isFallback = false;
 		const modelVersion = "google/gemini-2.5-flash";
@@ -210,7 +256,7 @@ Deno.serve(async (req: Request) => {
 						messages: [
 							{
 								role: "system",
-								content: `You are an AI content creator clone with this persona: ${creatorData.persona_text}. Generate engaging, informative content about the BNB ecosystem. Write ${lengthGuide} words.${toneInstruction} Do not include any markdown formatting.`,
+								content: systemPrompt,
 							},
 							{ role: "user", content: promptText },
 						],
@@ -287,10 +333,13 @@ Deno.serve(async (req: Request) => {
 				});
 				commitTxHash = hash;
 				console.log(`Real BNB tx: ${hash}`);
-		} catch (txErr) {
-			console.error("BNB tx failed, using fallback hash:", txErr instanceof Error ? txErr.message : "unknown");
-			commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
-		}
+			} catch (txErr) {
+				console.error(
+					"BNB tx failed, using fallback hash:",
+					txErr instanceof Error ? txErr.message : "unknown",
+				);
+				commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
+			}
 		} else {
 			commitTxHash = keccak256(
 				toBytes("mock-commit-" + postId + "-" + Date.now()),
@@ -316,10 +365,17 @@ Deno.serve(async (req: Request) => {
 		return json({ success: true, post_id: postId, tx_hash: commitTxHash });
 	} catch (e) {
 		const errorId = crypto.randomUUID().slice(0, 8);
-		console.error(`[generate-post:${errorId}]`, e instanceof Error ? e.message : e);
-		const msg = e instanceof Error && /signature|expired|wallet|rate limit|creator|epoch|tone|length|topic/i.test(e.message)
-			? e.message
-			: "Failed to generate post";
+		console.error(
+			`[generate-post:${errorId}]`,
+			e instanceof Error ? e.message : e,
+		);
+		const msg =
+			e instanceof Error &&
+			/signature|expired|wallet|rate limit|creator|epoch|tone|length|topic/i.test(
+				e.message,
+			)
+				? e.message
+				: "Failed to generate post";
 		return json({ error: msg, error_id: errorId }, 400);
 	}
 });
