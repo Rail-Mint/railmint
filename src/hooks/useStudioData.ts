@@ -106,9 +106,10 @@ export function useStudioData(address: string | undefined) {
 
 			const creator = creatorResult.data;
 
-			let profileData = null;
+		let profileData = null;
 			if (creator?.id) {
-				const { data: profileFields } = await supabase
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				const { data: profileFields } = await (supabase as any)
 					.from("creator_profiles")
 					.select("bio, tags, interests, specialties")
 					.eq("creator_id", creator.id)
@@ -119,10 +120,10 @@ export function useStudioData(address: string | undefined) {
 					x_verified: (creator as any).x_verified ?? false,
 					x_verified_at: (creator as any).x_verified_at ?? null,
 					is_active: (creator as any).is_active ?? true,
-					bio: profileFields?.bio,
-					tags: profileFields?.tags,
-					interests: profileFields?.interests,
-					specialties: profileFields?.specialties,
+					bio: (profileFields as any)?.bio,
+					tags: (profileFields as any)?.tags,
+					interests: (profileFields as any)?.interests,
+					specialties: (profileFields as any)?.specialties,
 				};
 			}
 
