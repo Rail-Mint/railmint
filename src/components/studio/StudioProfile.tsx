@@ -135,13 +135,22 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		try {
 			const redirectUri = `${window.location.origin}/studio/profile`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
-			window.location.href = authUrl;
+			// Open in a new tab — X blocks OAuth when loaded inside an iframe
+			const popup = window.open(authUrl, "_blank");
+			if (!popup) {
+				toast({
+					title: "Popup blocked",
+					description: "Please allow popups for this site, then try again.",
+					variant: "destructive",
+				});
+			}
 		} catch (err: any) {
 			toast({
 				title: "Verification failed",
 				description: err.message || "Could not start X verification",
 				variant: "destructive",
 			});
+		} finally {
 			setVerifyingX(false);
 		}
 	}, [profile, toast]);
@@ -154,14 +163,14 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		if (!code || !profile?.wallet_address) return;
 
-		const savedState = sessionStorage.getItem("x_oauth_state");
+		const savedState = localStorage.getItem("x_oauth_state");
 		if (state !== savedState) {
 			toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
 			window.history.replaceState({}, "", "/studio/profile");
 			return;
 		}
 
-		const codeVerifier = sessionStorage.getItem("x_oauth_verifier");
+		const codeVerifier = localStorage.getItem("x_oauth_verifier");
 		if (!codeVerifier) {
 			toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
 			window.history.replaceState({}, "", "/studio/profile");
@@ -169,8 +178,8 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		}
 
 		// Clean up
-		sessionStorage.removeItem("x_oauth_state");
-		sessionStorage.removeItem("x_oauth_verifier");
+		localStorage.removeItem("x_oauth_state");
+		localStorage.removeItem("x_oauth_verifier");
 		window.history.replaceState({}, "", "/studio/profile");
 
 		setVerifyingX(true);

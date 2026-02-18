@@ -41,9 +41,10 @@ export async function buildXOAuthUrl(redirectUri: string): Promise<string> {
   if (error) throw error;
   if (data?.error) throw new Error(data.error);
 
-  // Persist for the callback
-  sessionStorage.setItem("x_oauth_verifier", codeVerifier);
-  sessionStorage.setItem("x_oauth_state", data.state);
+  // Persist for the callback — use localStorage so it survives cross-tab redirects
+  // (sessionStorage is isolated per tab/window, so opening X OAuth in a new tab loses the verifier)
+  localStorage.setItem("x_oauth_verifier", codeVerifier);
+  localStorage.setItem("x_oauth_state", data.state);
 
   return data.authorization_url;
 }
