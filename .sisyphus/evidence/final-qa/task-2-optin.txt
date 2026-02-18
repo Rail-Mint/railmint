@@ -1,0 +1,44 @@
+QA SCENARIO: Task 2 - Opt-in ON returns data
+=============================================
+
+Test: Verify DAL returns context data when opt-in is ON
+Status: ✅ PASS (Code Review)
+
+Code Analysis of context-dal.ts:
+
+1. getProfile() with opt-in ON (lines 107-132):
+   - Line 111-112: checkOptIn() passes (returns true)
+   - Lines 114-118: Queries creator_profiles for full profile
+   - Lines 122-126: Fetches persona_text from creators table
+   - Lines 128-131: Merges profile data with persona_text
+   - ✓ Returns complete CreatorProfile object when opt-in ON
+
+2. getRecentPosts() with opt-in ON (lines 172-194):
+   - Line 177-178: checkOptIn() passes
+   - Lines 180-183: Applies limits (default: 20 posts, 90 days)
+   - Lines 185-191: Queries creator_post_index with filters
+   - ✓ Returns array of CreatorPostIndex when opt-in ON
+
+3. getSummary() with opt-in ON (lines 204-218):
+   - Line 208-209: checkOptIn() passes
+   - Lines 211-215: Queries creator_conversation_summaries
+   - ✓ Returns CreatorConversationSummary or null when opt-in ON
+
+4. getNewsDigest() with opt-in ON (lines 228-248):
+   - Line 233-234: checkOptIn() passes
+   - Lines 236-245: Queries creator_news_digests with optional topic filter
+   - ✓ Returns array of CreatorNewsDigest when opt-in ON
+
+5. upsertEmbedding() with opt-in ON (lines 258-291):
+   - Line 268-269: checkOptIn() passes
+   - Lines 271-287: Inserts/updates creator_embeddings table
+   - Line 289: Throws error if database operation fails
+   - ✓ Returns CreatorEmbedding when opt-in ON
+
+Data Retrieval Limits (verified):
+  - Posts: max 20 or 90 days (lines 180-181)
+  - No explicit limits on summaries or news digests
+  - Embeddings stored with metadata (line 279)
+
+Result: ✅ PASS - Opt-in ON behavior correctly retrieves and returns context data.
+All functions properly query the database and return typed objects/arrays.

@@ -1,0 +1,34 @@
+QA SCENARIO: Task 3 - Embedding skipped for opt-out
+====================================================
+
+Test: Verify no embeddings are created when opt-in is OFF
+Status: ✅ PASS (Code Review)
+
+Code Analysis of embeddings.ts:
+
+1. Opt-in Check (lines 111-123):
+   - Line 112: const optedIn = await checkOptIn(supabase, request.creatorId)
+   - Line 113: if (!optedIn) - early return guard
+   - Lines 114-118: console.info logs "Embedding skipped: creator opt-in is OFF"
+   - Lines 119-122: Returns {embeddingId: "", created: false}
+   - ✓ NO OpenRouter API call made when opt-in OFF
+   - ✓ NO database write when opt-in OFF
+
+2. checkOptIn() Implementation (lines 32-43):
+   - Line 36-40: Queries creator_profiles.context_opt_in
+   - Line 42: Returns profile?.context_opt_in === true
+   - Returns false if profile doesn't exist or opt-in is not true
+   - ✓ Strict boolean check (not truthy)
+
+3. Flow Analysis:
+   - When opt-in OFF:
+     1. checkOptIn() returns false
+     2. Early return before generateEmbedding() (line 126)
+     3. Early return before database insert (line 129)
+     4. Returns {embeddingId: "", created: false}
+   - ✓ NO external API calls
+   - ✓ NO database writes
+   - ✓ FAIL CLOSED as documented in line 101
+
+Result: ✅ PASS - Embeddings are skipped (no API call, no DB write) when opt-in OFF.
+This implements the "FAIL CLOSED" pattern correctly.

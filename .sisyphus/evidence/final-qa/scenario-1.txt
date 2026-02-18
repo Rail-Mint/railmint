@@ -1,0 +1,56 @@
+                       List of tables
+ Schema |              Name              | Type  |  Owner   
+--------+--------------------------------+-------+----------
+ public | creator_conversation_summaries | table | postgres
+ public | creator_embeddings             | table | postgres
+ public | creator_news_digests           | table | postgres
+ public | creator_post_index             | table | postgres
+ public | creator_profiles               | table | postgres
+ public | creators                       | table | postgres
+ public | donation_audit_log             | table | postgres
+ public | donations                      | table | postgres
+ public | epoch_rewards                  | table | postgres
+ public | epochs                         | table | postgres
+ public | likes                          | table | postgres
+ public | mentions                       | table | postgres
+ public | posts                          | table | postgres
+ public | user_roles                     | table | postgres
+ public | wallet_activity_log            | table | postgres
+ public | webhook_nonces                 | table | postgres
+(16 rows)
+
+ extname 
+---------
+ vector
+(1 row)
+
+                         Table "public.creator_embeddings"
+   Column    |           Type           | Collation | Nullable |      Default      
+-------------+--------------------------+-----------+----------+-------------------
+ id          | uuid                     |           | not null | gen_random_uuid()
+ creator_id  | uuid                     |           | not null | 
+ embedding   | vector(1536)             |           | not null | 
+ source_type | text                     |           | not null | 
+ source_id   | uuid                     |           | not null | 
+ metadata    | jsonb                    |           |          | '{}'::jsonb
+ created_at  | timestamp with time zone |           | not null | now()
+ updated_at  | timestamp with time zone |           | not null | now()
+Indexes:
+    "creator_embeddings_pkey" PRIMARY KEY, btree (id)
+    "idx_creator_embeddings_creator_id" btree (creator_id)
+    "idx_creator_embeddings_source_id" btree (source_id)
+    "idx_creator_embeddings_source_type" btree (source_type)
+    "idx_creator_embeddings_updated_at" btree (updated_at)
+    "idx_creator_embeddings_vector" ivfflat (embedding vector_cosine_ops) WITH (lists='100')
+Check constraints:
+    "creator_embeddings_source_type_check" CHECK (source_type = ANY (ARRAY['post'::text, 'conversation'::text, 'profile'::text]))
+Foreign-key constraints:
+    "creator_embeddings_creator_id_fkey" FOREIGN KEY (creator_id) REFERENCES creators(id) ON DELETE CASCADE
+Policies:
+    POLICY "Anyone can view creator embeddings" FOR SELECT
+      USING (true)
+    POLICY "Service role can manage creator embeddings"
+      USING (true)
+Triggers:
+    update_creator_embeddings_updated_at BEFORE UPDATE ON creator_embeddings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column()
+

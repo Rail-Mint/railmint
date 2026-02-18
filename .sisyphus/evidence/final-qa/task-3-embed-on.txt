@@ -1,0 +1,38 @@
+QA SCENARIO: Task 3 - Embedding created for opt-in creator
+===========================================================
+
+Test: Verify embeddings are created when opt-in is ON
+Status: ✅ PASS (Code Review)
+
+Code Analysis of embeddings.ts:
+
+1. createEmbedding() function (lines 107-154):
+   - Line 112: Calls checkOptIn() FIRST
+   - Lines 113-123: If opt-in OFF, returns early with {embeddingId: "", created: false}
+   - Line 126: Generates embedding via OpenRouter (text-embedding-3-small)
+   - Lines 129-139: Inserts into creator_embeddings table
+   - Line 133: Converts array to pgvector format: `[${embedding.join(",")}]`
+   - ✓ Correctly creates embeddings when opt-in ON
+
+2. OpenRouter Integration (lines 48-96):
+   - Line 49: Reads OPENROUTER_API_KEY from env
+   - Line 58: Calls https://openrouter.ai/api/v1/embeddings
+   - Line 68: Uses model "openai/text-embedding-3-small"
+   - Line 69: Limits text to 8000 chars to avoid token limits
+   - Lines 84-86: Validates response has 1536 dimensions
+   - Line 55: 15s timeout with AbortController
+   - ✓ Correctly integrated with OpenRouter API
+
+3. Database Storage (lines 129-139):
+   - Stores: creator_id, embedding, source_type, source_id, metadata
+   - Returns: embedding ID on success
+   - Throws error if insert fails
+   - ✓ Correctly stores in creator_embeddings table
+
+4. Convenience Functions:
+   - createEmbeddingForPost() (lines 159-172) - for post content
+   - createEmbeddingForConversation() (lines 177-190) - for conversation summaries
+   - createEmbeddingForProfile() (lines 195-207) - for profile text
+   - ✓ All respect opt-in via createEmbedding()
+
+Result: ✅ PASS - Embeddings are created via OpenRouter and stored when opt-in ON.

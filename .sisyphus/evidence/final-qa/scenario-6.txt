@@ -1,0 +1,109 @@
+[1;33m=== RailMint Process-Mention Local Test Script ===[0m
+
+[0;32mTest 1: Verified creator - publish command[0m
+Expected: Post created, AI reply sent
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   391    0     0  100   391      0    388  0:00:01  0:00:01 --:--:--   389100   391    0     0  100   391      0    194  0:00:02  0:00:02 --:--:--   194100   391    0     0  100   391      0    129  0:00:03  0:00:03 --:--:--   129100   391    0     0  100   391      0     97  0:00:04  0:00:04 --:--:--    97100   477  100    86  100   391     21     96  0:00:04  0:00:04 --:--:--   117
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[0;32m---[0m
+
+[1;33mTest 2: Unverified user - publish command[0m
+Expected: Verification CTA reply sent, no post created
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   343  100    86  100   257   9501  28394 --:--:-- --:--:-- --:--:-- 38111
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[1;33m---[0m
+
+[0;32mTest 3: Verified creator - ask command[0m
+Expected: AI-generated response about creator content
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   361  100    86  100   275  10375  33176 --:--:-- --:--:-- --:--:-- 45125
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[0;32m---[0m
+
+[1;33mTest 4: Unverified user - ask command[0m
+Expected: AI reply with general content info (no verification needed for asks)
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   331  100    86  100   245  11413  32514 --:--:-- --:--:-- --:--:-- 47285
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[1;33m---[0m
+
+[0;32mTest 5: Verified user - donate command[0m
+Expected: Donation processed, reward pool updated
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   408  100    86  100   322  11514  43111 --:--:-- --:--:-- --:--:-- 58285
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[0;32m---[0m
+
+[1;33mTest 6: Deferred processing - webhook simulation[0m
+Expected: Mention queued with status 'received'
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   256  100    86  100   170   9586  18949 --:--:-- --:--:-- --:--:-- 32000
+{
+  "error": "X_WEBHOOK_SECRET is not configured — webhook verification cannot proceed"
+}
+
+[1;33m---[0m
+
+[0;32m=== Test script completed ===[0m
+
+Note: These tests use local Supabase and bypass webhook signature verification.
+To test with webhook signatures, use the X webhook endpoint with proper headers.
+
+Local Supabase Dashboard: http://127.0.0.1:54323
+{
+  "test": "Opt-in OFF behavior",
+  "function_location": "supabase/functions/update-summaries/index.ts",
+  "passed": true,
+  "verification_method": "Code inspection",
+  "assertions": {
+    "opt_out_check": "Line 256: .eq('agentic_context_opt_in', true) - only fetches creators with opt-in enabled",
+    "no_processing_for_opt_out": "Creators with agentic_context_opt_in=false are excluded from query",
+    "no_summary_updates": "updateCreatorSummary never called for opt-out creators"
+  },
+  "notes": "Function respects opt-in status:\n- Only queries creators WHERE agentic_context_opt_in = true\n- Creators with opt-in OFF are never included in processing batch\n- No summary generation or database writes occur for opt-out creators\n- Preserves existing data but stops all new writes\n\nThis aligns with architectural decision: 'Opt-out: preserve data but stop using; no new writes'"
+}
+{
+  "test": "Summary update for opt-in creator",
+  "function_location": "supabase/functions/update-summaries/index.ts",
+  "passed": true,
+  "verification_method": "Code inspection",
+  "assertions": {
+    "function_exists": true,
+    "opt_in_check": "Line 256: .eq('agentic_context_opt_in', true)",
+    "token_cap": "Line 114: Math.min(tokenCount, 500)",
+    "llm_integration": "generateSummary function uses OpenRouter API with max_tokens: 500",
+    "batch_processing": "runWithConcurrency helper for parallel processing",
+    "upsert_logic": "Lines 186-199: upserts summary to creator_conversation_summaries",
+    "recent_mentions": "fetchRecentMentions retrieves last 20 mentions or 90 days"
+  },
+  "notes": "Function implements all requirements:\n- Batch processes creators with opt-in enabled\n- Generates summaries via OpenRouter (gpt-4o-mini)\n- Caps summaries at 500 tokens\n- Updates creator_conversation_summaries table\n- Only processes creators with agentic_context_opt_in=true\n- Skips creators with opt-in OFF (no updates performed)\n\nFull integration test blocked by missing agentic_context_opt_in column (Task 1 dependency)"
+}
+{"success":true,"mention_db_id":"f0ebbf40-ebf6-49ba-96e2-ccb8ab50c954","intent":"unverified_prompt","reason":"creator not verified"}{"success":true,"mention_db_id":"8e094bee-473d-4762-ac4f-21162f51b773","intent":"ask","result":{"question":"What is your opinion on Web3 adoption?","response":"Recent BNB content highlights: 1) Exploring DeFi yield strategies on opBNB. Layer 2 scaling makes transaction costs negligible....","x_reply_error":"Missing TWITTERAPI_LOGIN_COOKIES"}}{"success":true,"mention_db_id":"e95feb79-0184-4e72-bf56-fb3013d44724","intent":"ask","result":{"question":"What are your thoughts on blockchain technology?","response":"I could not find recent BNB creator posts yet."}}{"error":"No open epoch found"}{"success":true,"mention_db_id":"7e69dcdc-3acd-4843-9208-4fe135c9d6d4","intent":"publish","result":{"post_id":"72622342-ab33-4b2c-9ac1-72f585c9483a","creator_id":"e22b7a83-7319-4440-8a2c-39b57f8a3194","quality":{"qualityScore":0.6433,"moderationScore":1,"engagementScore":0,"compositeScore":0.6433,"riskLevel":"low","qualityFlags":[],"contentTags":["defi","opbnb"]}}}

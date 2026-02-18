@@ -1,0 +1,105 @@
+TASK 11: Add Structured Profile Fields to Studio Profile Page
+================================================================
+
+OBJECTIVE:
+Add bio, tags, interests, and specialties fields to StudioProfile.tsx while maintaining
+existing persona editor functionality. Wire to creator_profiles table via Supabase.
+
+FILES MODIFIED:
+--------------
+
+1. src/components/studio/StudioProfile.tsx
+   - Lines 40-48: Extended form state to include new fields
+     * Added bio: string
+     * Added tags: string[]
+     * Added interests: string[]
+     * Added specialties: string[]
+   
+   - Lines 54-66: Updated useEffect to load new fields from profile
+     * Loads bio, tags, interests, specialties from profile with fallbacks
+   
+   - Lines 113-127: Updated handleCancel to reset new fields
+     * Resets all four new fields when canceling edit
+   
+   - Lines 83-91: Updated handleSave to include new fields in update
+     * Sends bio (trimmed)
+     * Sends tags (filtered for non-empty)
+     * Sends interests (filtered for non-empty)
+     * Sends specialties (filtered for non-empty)
+   
+   - Lines 94-102: Updated onProfileUpdate to include new fields
+     * Updates local profile state with new field values
+   
+   - Lines 474-686: Added new "Profile Details" Card section
+     * Bio field (textarea, 500 char limit, character counter)
+     * Tags field (comma-separated input, displays as badges)
+     * Interests field (comma-separated input, displays as badges)
+     * Specialties field (comma-separated input, displays as badges)
+     * All fields show in edit mode as inputs, view mode as formatted display
+     * Empty states show "No [field] added yet" messages
+
+2. src/hooks/useStudioData.ts
+   - Lines 4-18: Extended CreatorProfile type definition
+     * Added bio?: string
+     * Added tags?: string[]
+     * Added interests?: string[]
+     * Added specialties?: string[]
+   
+   - Lines 107-129: Added creator_profiles table query in fetchData
+     * Queries creator_profiles table for bio, tags, interests, specialties
+     * Links by creator_id
+     * Merges profile fields into creator data
+     * Maintains existing x_verified, x_verified_at, is_active fields
+
+3. src/integrations/supabase/types.ts
+   - Regenerated types after database reset
+   - Added creator_profiles table type definitions
+   - Includes all fields: bio, tags, interests, specialties, context_opt_in, news_enabled, etc.
+
+DATABASE CHANGES:
+----------------
+- Ran `npx supabase db reset` to apply migration 20260218120100_creator_profiles.sql
+- creator_profiles table now available with columns:
+  * bio (TEXT, nullable)
+  * tags (TEXT[], default '{}')
+  * interests (TEXT[], default '{}')
+  * specialties (TEXT[], default '{}')
+  * creator_id (UUID, references creators.id)
+  * context_opt_in (BOOLEAN, default false)
+  * news_enabled (BOOLEAN, default false)
+
+UI/UX DECISIONS:
+---------------
+1. Placed new "Profile Details" card between "Persona" and "Prompt Template" sections
+2. Used comma-separated input for array fields (simple, familiar pattern)
+3. Display arrays as Badge components in view mode (consistent with existing X verification badge)
+4. Show character count for bio field (500 char limit)
+5. Maintained existing section comment style (/* Structured Profile Fields */)
+6. Used consistent spacing, typography, and border styles with existing cards
+
+INTEGRATION PATTERN:
+-------------------
+- Load: useStudioData fetches from creator_profiles on mount
+- Save: invokeWithSignature("update-profile") sends new fields to backend
+- Backend edge function must handle creator_profiles upsert (separate task)
+
+VERIFICATION:
+------------
+✅ TypeScript compilation: Clean (no LSP errors)
+✅ Build: Success (bun run build completed)
+✅ Persona editor: Maintained (still present at line 444-474)
+✅ Form state: All fields properly initialized and reset
+✅ Save/load: Wired to Supabase via useStudioData and update-profile action
+
+DEPENDENCIES:
+------------
+- Requires backend edge function "update-profile" to handle new fields (Task 12)
+- creator_profiles table already exists (created in Task 1)
+- No new npm dependencies added
+
+NOTES:
+-----
+- Arrays stored as PostgreSQL TEXT[] type
+- Empty array values filtered on save to avoid storing empty strings
+- Profile fields optional (nullable in database)
+- Graceful fallback to empty states when fields not populated

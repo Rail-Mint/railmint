@@ -1,0 +1,179 @@
+TASK 12: Agentic Context Preferences UI
+========================================
+
+Date: 2026-02-18
+File Modified: src/components/studio/StudioProfile.tsx
+
+OBJECTIVE
+---------
+Add opt-in toggle (default OFF), news subscription preferences, and digest cadence controls
+to Studio Profile page. Save to creator_profiles via Supabase.
+
+IMPLEMENTATION DETAILS
+----------------------
+
+1. IMPORTS ADDED
+   - Switch component from @/components/ui/switch
+   - Select, SelectContent, SelectItem, SelectTrigger, SelectValue from @/components/ui/select
+
+2. FORM STATE EXTENDED
+   Added four new fields to form state (line 40-51):
+   - agentic_context_opt_in: boolean (default: false)
+   - news_enabled: boolean (default: false)
+   - news_topics: string[] (default: [])
+   - news_cadence: 'hourly' | 'daily' | 'weekly' (default: 'daily')
+
+3. LOAD LOGIC UPDATED (useEffect, line 65-79)
+   Form now loads all four preference fields from profile data with fallback defaults:
+   - agentic_context_opt_in: (profile as any).agentic_context_opt_in || false
+   - news_enabled: (profile as any).news_enabled || false
+   - news_topics: (profile as any).news_topics || []
+   - news_cadence: (profile as any).news_cadence || 'daily'
+
+4. SAVE LOGIC UPDATED (handleSave, line 95-122)
+   invokeWithSignature("update-profile") now includes:
+   - agentic_context_opt_in: form.agentic_context_opt_in
+   - news_enabled: form.news_enabled
+   - news_topics: form.news_topics.filter((t) => t.trim())
+   - news_cadence: form.news_cadence
+
+   onProfileUpdate also propagates all four new fields to parent component.
+
+5. CANCEL LOGIC UPDATED (handleCancel, line 144-159)
+   Reset form now includes all four preference fields to restore original state on cancel.
+
+6. UI SECTION ADDED (after Profile Details card, line 672-817)
+   
+   NEW CARD: "Agentic Context Preferences"
+   
+   Section 1: Enable Context-Aware Agent (line 680-712)
+   - Toggle switch when editing
+   - Badge display (Enabled/Disabled) when not editing
+   - Description: "Allow agent to use your profile, posts, and news for personalized responses"
+   
+   Section 2: News Preferences (conditionally rendered, line 714-810)
+   - Only visible when agentic_context_opt_in is true
+   - Respects editing state (form vs profile data)
+   
+   Sub-section 2a: Enable News Digests (line 716-751)
+   - Toggle switch when editing
+   - Badge display when not editing
+   - Description: "Receive curated news based on your interests"
+   
+   Sub-section 2b: News Topics (line 753-791, shown when news_enabled is true)
+   - Comma-separated input when editing
+   - Badge chips when not editing
+   - Placeholder: "AI, Web3, DeFi, NFTs, Gaming, etc."
+   - Fallback: "No topics selected" when empty
+   
+   Sub-section 2c: Digest Cadence (line 793-817, shown when news_enabled is true)
+   - Select dropdown when editing (Hourly, Daily, Weekly)
+   - Text display when not editing
+   - Default: "daily"
+
+PRIVACY-FIRST DEFAULTS
+----------------------
+CRITICAL CONSTRAINT ENFORCED: All opt-in fields default to FALSE/OFF
+
+- agentic_context_opt_in: false (must explicitly opt in)
+- news_enabled: false (must explicitly enable)
+- news_topics: [] (empty until user provides)
+- news_cadence: 'daily' (reasonable default when enabled)
+
+This ensures users MUST consciously opt in to context sharing and news features.
+No automatic enrollment. No dark patterns.
+
+CONDITIONAL RENDERING LOGIC
+----------------------------
+The UI uses nested conditional rendering to show/hide sections:
+
+1. News Preferences section only visible when:
+   editing ? form.agentic_context_opt_in : (profile as any).agentic_context_opt_in
+
+2. News Topics and Cadence only visible when:
+   editing ? form.news_enabled : (profile as any).news_enabled
+
+This ensures the UI adapts to both editing and viewing states correctly.
+
+VALIDATION & DATA CLEANING
+---------------------------
+- news_topics are filtered: .filter((t) => t.trim()) to remove empty strings
+- Comma-separated input is split and trimmed: .split(",").map((t) => t.trim()).filter((t) => t)
+
+INTEGRATION PATTERN
+-------------------
+Follows existing Task 11 pattern:
+- invokeWithSignature("update-profile", data, wallet_address)
+- onProfileUpdate propagates changes to parent
+- Form state managed with useState
+- useCallback for handlers
+
+COMPILATION STATUS
+------------------
+✅ TypeScript: No errors
+✅ Build: Successful (npm run build)
+✅ LSP Diagnostics: Clean
+
+VISUAL DESIGN
+-------------
+- Matches existing card pattern with border-border/40 styling
+- Uses uppercase tracking-wider labels for consistency
+- Conditional Badge display (default/outline variants)
+- Nested sections with border-t dividers
+- Text hierarchy: font-medium for labels, text-xs for descriptions
+- Follows shadcn/ui component patterns (Switch, Select, Badge)
+
+FILES AFFECTED
+--------------
+src/components/studio/StudioProfile.tsx (modified)
+
+DEPENDENCIES
+------------
+- @/components/ui/switch (new import)
+- @/components/ui/select (new import)
+- Existing: Badge, Card, Input, Textarea
+
+TESTING NOTES
+-------------
+To verify functionality:
+1. Navigate to Studio Profile page (/studio/profile)
+2. Click "Edit" button
+3. Toggle "Enable Context-Aware Agent" ON
+4. Verify "Enable News Digests" toggle appears
+5. Toggle "Enable News Digests" ON
+6. Verify "News Topics" input and "Digest Cadence" dropdown appear
+7. Enter topics (e.g., "AI, Web3, DeFi")
+8. Select cadence (e.g., "Weekly")
+9. Click "Save"
+10. Verify preferences persist after page reload
+11. Test Cancel restores original values
+12. Test that toggling opt-in OFF hides news preferences
+
+SECURITY CONSIDERATIONS
+-----------------------
+- All data saved via invokeWithSignature (requires wallet signature)
+- No client-side manipulation of saved data
+- Server-side validation occurs in update-profile function
+- Privacy-first: explicit opt-in required
+
+FUTURE ENHANCEMENTS
+-------------------
+- Topic autocomplete/suggestions
+- Preview of news digest based on selections
+- Email/notification preferences for digests
+- Topic frequency analytics
+- News source preferences
+
+COMPLETION CHECKLIST
+--------------------
+✅ Opt-in toggle visible and defaults to OFF
+✅ News preferences conditionally rendered
+✅ News topics multi-select (comma-separated input)
+✅ Digest cadence dropdown (hourly, daily, weekly)
+✅ Fields load from creator_profiles table
+✅ Fields save via invokeWithSignature
+✅ Cancel restores original values
+✅ TypeScript compilation clean
+✅ Build successful
+✅ UI matches existing design patterns
+✅ Privacy-first defaults enforced

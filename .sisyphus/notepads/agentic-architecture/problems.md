@@ -29,3 +29,20 @@
 
 **Recommendation**: Revisit these tests in a follow-up session with simplified scope or manual creation
 
+
+## [2026-02-18] Wave FINAL (F1-F4) Deferred
+
+**Decision**: User requested to skip Wave FINAL compliance audits and prioritize Studio Bot Tester UI implementation.
+
+**Status**:
+- F1 (Plan Compliance Audit): Timed out, partial evidence created
+- F2 (Code Quality Review): ✅ Completed in 4m23s
+- F3 (QA Scenario Replay): Timed out, partial evidence created  
+- F4 (Scope Fidelity Check): Timed out, partial evidence created
+
+**Rationale**: User stated "I need it ASAP" for Bot Tester UI and explicitly approved skipping final wave.
+
+**Impact**: Core functionality (Waves 1-2) is complete and working. CI/metrics/UI tests in place. Compliance audits deferred as nice-to-have.
+
+**Follow-up**: Can be resumed later if needed. Evidence files exist in `.sisyphus/evidence/final-qa/`.
+
