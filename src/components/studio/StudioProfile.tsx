@@ -53,10 +53,11 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	const [saving, setSaving] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const popupRef = useRef<Window | null>(null);
+	const oauthHandledRef = useRef(false);
 
-	// Detect if this page load is the OAuth popup callback (has ?code= or ?error= in URL)
+	// Detect if this is the OAuth callback — check URL params only (window.opener is null in Brave)
 	const urlParams = new URLSearchParams(window.location.search);
-	const isOAuthPopup = !!window.opener && (urlParams.has("code") || urlParams.has("error"));
+	const isOAuthPopup = urlParams.has("code") || urlParams.has("error");
 
 	useEffect(() => {
 		if (profile) {
@@ -122,7 +123,9 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		setEditing(false);
 	}, [profile]);
 
-	// Handle OAuth callback params when X redirects back to /studio/profile inside the popup
+	// Handle OAuth callback params when X redirects back to /studio/profile inside the popup.
+	// NOTE: window.opener is null in Brave due to privacy settings, so we broadcast via
+	// BroadcastChannel instead and also attempt postMessage as a bonus.
 	useEffect(() => {
 		const params = new URLSearchParams(window.location.search);
 		const code = params.get("code");
@@ -131,30 +134,32 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		if (!code && !error) return; // Not a callback
 
-		// Remove params from URL without navigating
+		// Remove params from URL immediately so we don't re-process on future renders
 		window.history.replaceState({}, "", window.location.pathname);
 
 		const message = error
 			? { type: "x-oauth-error", error: params.get("error_description") || error }
 			: { type: "x-oauth-complete", code, state };
 
-		// If inside popup, relay to parent and close
+		// 1. Try postMessage to opener (works in Chrome/Firefox where opener is available)
 		if (window.opener && !window.opener.closed) {
 			try {
 				window.opener.postMessage(message, window.location.origin);
-				window.close();
-				return;
 			} catch {}
 		}
 
-		// BroadcastChannel fallback
+		// 2. BroadcastChannel — works even when opener is null (Brave, Firefox strict mode)
 		try {
 			const bc = new BroadcastChannel("x_oauth_channel");
 			bc.postMessage(message);
 			bc.close();
 		} catch {
+			// 3. Last resort: localStorage polling
 			localStorage.setItem("x_oauth_result", JSON.stringify(message));
 		}
+
+		// Always attempt to close the popup window
+		window.close();
 	}, []);
 
 	const handleVerifyX = useCallback(async () => {
@@ -205,6 +210,10 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		const handleOAuthMessage = async (message: { type: string; code?: string; state?: string; error?: string }) => {
 			if (!message.type?.startsWith("x-oauth")) return;
+
+			// Guard against double-processing (postMessage + BroadcastChannel can both fire)
+			if (oauthHandledRef.current) return;
+			oauthHandledRef.current = true;
 
 			popupRef.current?.close();
 			popupRef.current = null;
