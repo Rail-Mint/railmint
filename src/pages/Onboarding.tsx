@@ -702,7 +702,7 @@ export default function Onboarding() {
 		if (!address) return;
 		setVerifyingX(true);
 		try {
-			const redirectUri = `${window.location.origin}/studio/profile`;
+			const redirectUri = `${window.location.origin}/studio/oauth-callback`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
 			const width = 500,
 				height = 660;
@@ -793,7 +793,7 @@ export default function Onboarding() {
 						{
 							code,
 							code_verifier: codeVerifier,
-							redirect_uri: `${window.location.origin}/studio/profile`,
+							redirect_uri: `${window.location.origin}/studio/oauth-callback`,
 						},
 						address!,
 					);

@@ -1,1 +1,0 @@
-{"success":true,"mention_db_id":"8e094bee-473d-4762-ac4f-21162f51b773","intent":"ask","result":{"question":"What is your opinion on Web3 adoption?","response":"Recent BNB content highlights: 1) Exploring DeFi yield strategies on opBNB. Layer 2 scaling makes transaction costs negligible....","x_reply_error":"Missing TWITTERAPI_LOGIN_COOKIES"}}
