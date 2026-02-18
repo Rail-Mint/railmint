@@ -168,7 +168,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		setEditing(false);
 	}, [profile]);
 
-	// Handle OAuth callback params when X redirects back to /studio/oauth-callback inside the popup.
+	// Handle OAuth callback params when X redirects back to /studio/profile inside the popup.
 	// NOTE: window.opener is null in Brave due to privacy settings, so we broadcast via
 	// BroadcastChannel instead and also attempt postMessage as a bonus.
 	useEffect(() => {
@@ -215,7 +215,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		setVerifyingX(true);
 		try {
-			const redirectUri = `${window.location.origin}/studio/oauth-callback`;
+			const redirectUri = `${window.location.origin}/studio/profile`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
 
 			// Open as a centered popup
@@ -316,7 +316,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 						{
 							code,
 							code_verifier: codeVerifier,
-							redirect_uri: `${window.location.origin}/studio/oauth-callback`,
+							redirect_uri: `${window.location.origin}/studio/profile`,
 						},
 						profile!.wallet_address,
 					);
