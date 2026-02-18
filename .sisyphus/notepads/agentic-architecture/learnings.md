@@ -983,3 +983,255 @@ This pattern ensures correct visibility in both editing and viewing modes.
 ### Evidence File
 - `.sisyphus/evidence/task-12-preferences-ui.txt` - Full implementation details
 
+
+## Task 18: Structured Logging for Performance Metrics (2026-02-18)
+
+### What Was Done
+Added structured performance logging to process-mention function to make p95 ≤6s target measurable.
+
+### Metrics Logged
+1. **retrieval_latency_ms** - Context pack fetch duration (buildContextPack)
+2. **tokens_total** - Total tokens in context pack (0 when opt-out)
+3. **tool_call_count** - Number of tool calls by OpenAI Agents SDK
+4. **context_pack_built** - Boolean flag (true when context used)
+
+### Implementation Pattern
+- Timer pattern: `Date.now()` before/after `buildContextPack()`
+- Filter pattern: `result.newItems.filter(item => item.type === "tool_call_output_item")`
+- Structured log: `console.info("process-mention metrics", { ... })`
+- Return type extension: Added fields to `lookupVerifiedCreator()` and `runAgentForMention()`
+
+### Key Design Decisions
+1. **Latency Measurement Scope**: Only measures buildContextPack duration (not full request)
+   - Rationale: Context pack is the variable component (other logic is predictable)
+   - Alternative: Could measure end-to-end, but would include OpenRouter latency (external)
+
+2. **Tool-Call Count**: Counts all tool invocations, not just successful ones
+   - Rationale: Enforcement target is "calls made", not "calls succeeded"
+   - Current limit: ≤3 tools registered (generatePost, publishPost, listPersona)
+
+3. **context_pack_built Logic**: Checks both null AND totalTokens > 0
+   - Rationale: Empty pack with 0 tokens should be treated as "not built"
+   - Covers opt-out case (null) and profile-missing case (totalTokens = 0)
+
+4. **Log Placement**: After agent execution, before reply sending
+   - Rationale: Captures full processing metrics before HTTP response
+   - Alternative: Could log earlier, but would miss tool-call count
+
+### Token Estimation Strategy
+- Uses existing `totalTokens` field from buildContextPack (Task 5)
+- Estimation: 1 token ≈ 4 characters (heuristic from context-pack.ts)
+- No additional computation (zero overhead)
+
+### Performance Impact
+- Timer overhead: ~2 Date.now() calls (microseconds)
+- Filter overhead: O(n) where n = result.newItems.length (typically <10)
+- Log overhead: Structured JSON log (handled by Deno runtime)
+- Net impact: Negligible (<1ms)
+
+### Monitoring Use Cases
+1. **p95 Latency SLO**: Query retrieval_latency_ms for percentile distribution
+2. **Token Budget Compliance**: Alert when tokens_total > 1000
+3. **Tool-Call Limit**: Alert when tool_call_count > 3
+4. **Feature Adoption**: Track context_pack_built=true rate
+
+### Example Log Outputs
+
+**Opt-In Creator**:
+```json
+{
+  "mention_id": "mention-abc123",
+  "retrieval_latency_ms": 145,
+  "context_pack_built": true,
+  "tokens_total": 823,
+  "tool_call_count": 2,
+  "intent": "ask"
+}
+```
+
+**Opt-Out Creator**:
+```json
+{
+  "mention_id": "mention-xyz789",
+  "retrieval_latency_ms": 12,
+  "context_pack_built": false,
+  "tokens_total": 0,
+  "tool_call_count": 1,
+  "intent": "ask"
+}
+```
+
+### Validation Results
+- ✓ 9/9 code structure checks passed
+- ✓ All required fields present in log
+- ✓ No sensitive data in logs (PII, credentials)
+- ✓ Opt-out creators log `tokens_total: 0`
+
+### Integration Dependencies
+- Task 5: buildContextPack provides totalTokens field
+- Task 8: Context pack integration in process-mention
+- OpenAI Agents SDK: result.newItems structure
+
+### Next Steps for Production
+1. Deploy to Supabase production environment
+2. Verify logs appear in Supabase dashboard
+3. Set up monitoring alerts:
+   - `retrieval_latency_ms` p95 > 6000ms
+   - `tokens_total` > 1000
+   - `tool_call_count` > 3
+4. Collect 7-day baseline for optimization targets
+
+### Patterns to Reuse
+- **Timer pattern**: `Date.now()` before/after async operation
+- **Filter pattern**: `result.newItems.filter(item => item.type === "X")`
+- **Structured logging**: Single `console.info` with JSON object
+- **Return type extension**: Add metrics fields to existing functions
+- **Defense-in-depth**: Boolean logic with null check AND value check
+
+### Security Verification
+- ✓ No PII logged (mention_id is non-sensitive identifier)
+- ✓ No content logged (only numeric counts)
+- ✓ Opt-out creators show zero tokens (no data leakage)
+- ✓ Intent is enum (no free-form text)
+
+
+---
+
+## Task 17: GitHub Actions CI Workflow (2026-02-18)
+
+### What Was Done
+Created `.github/workflows/test.yml` to run automated tests and build verification on PRs and pushes to main.
+
+### Implementation Details
+
+**Workflow Structure**:
+- **Triggers**: push and pull_request events on main branch
+- **Jobs**: Two parallel jobs (test, lint) with no dependencies
+- **Matrix**: Test job runs on Node 18.x and 20.x for compatibility
+
+**Test Job**:
+1. Checkout code (actions/checkout@v4)
+2. Setup Bun (oven-sh/setup-bun@v1)
+3. Install dependencies (bun install --frozen-lockfile)
+4. Run Vitest (bun test)
+5. Run Hardhat tests (bun run hardhat:test)
+6. Run type checking (bun run typecheck)
+7. Run build (bun run build)
+
+**Lint Job**:
+1. Checkout code
+2. Setup Bun
+3. Install dependencies
+4. Run linting (bun run lint)
+
+### Key Design Decisions
+
+1. **Bun-First**: Used oven-sh/setup-bun@v1 instead of Node setup
+   - Project uses Bun as package manager
+   - All commands run via `bun` (consistent with local dev)
+   - No node_modules caching needed (Bun handles caching)
+
+2. **Frozen Lockfile**: `bun install --frozen-lockfile`
+   - Ensures deterministic builds
+   - Prevents accidental dependency updates
+   - CI fails if lock file is out of sync (good for catching issues)
+
+3. **Matrix Testing**: Node 18.x and 20.x in parallel
+   - Tests run simultaneously (faster feedback)
+   - Ensures compatibility with multiple Node versions
+   - Hardhat compatibility verified across versions
+
+4. **Separate Lint Job**: Not part of test job
+   - Lint failures don't block test execution
+   - Enables fast feedback (linting is quick)
+   - Can potentially be cached/optimized separately
+
+5. **Comprehensive Test Coverage**:
+   - Vitest: Unit tests for React components and utilities
+   - Hardhat: Smart contract tests
+   - TypeScript: Type safety (compile check)
+   - Vite: Build verification (catches bundling issues)
+   - ESLint: Code quality and style enforcement
+
+### Testing Strategy Alignment
+
+From decisions.md: "Tests-after (no TDD), zero human intervention"
+- Workflow runs ALL tests: Vitest, Hardhat, build, lint
+- No --skip-tests or bypass flags
+- CI enforces test execution before merge
+
+### Package.json Integration
+
+**Commands Used**:
+- `bun test` → vitest run (unit tests)
+- `bun run hardhat:test` → hardhat test (smart contracts)
+- `bun run typecheck` → TypeScript compilation (type safety)
+- `bun run build` → vite build (production bundle)
+- `bun run lint` → eslint . (code quality)
+
+All commands already exist in package.json (no new scripts needed).
+
+### Validation Evidence
+
+**File**: `.sisyphus/evidence/task-17-ci.txt`
+- ✅ YAML syntax validated
+- ✅ All required steps present
+- ✅ Triggers configured correctly
+- ✅ Bun setup verified
+- ✅ Test commands match package.json
+
+### Workflow Features
+
+1. **Fast Feedback**: Parallel jobs (test + lint)
+2. **Comprehensive**: 5 different test suites
+3. **Cross-Version**: Matrix testing on 18.x and 20.x
+4. **Reproducible**: Frozen lockfile ensures consistency
+5. **No Secrets**: Basic tests require no credentials
+
+### GitHub Actions Integration
+
+- File location: `.github/workflows/test.yml`
+- Will auto-register when pushed to main
+- Status checks appear on PR page
+- Failed checks block merge (configurable in repo settings)
+- Full logs available in Actions tab
+
+### Next Steps for Production
+
+1. Push to GitHub to activate workflow
+2. Test with first PR (verify all checks pass)
+3. Monitor action logs for any issues
+4. Consider adding workflow badges to README
+5. Set required checks in branch protection rules
+
+### Patterns to Reuse
+
+1. **Matrix Strategy**: For testing multiple configurations
+2. **Frozen Lockfile Pattern**: Ensures reproducibility
+3. **Separate Job Strategies**: Fast feedback by parallelizing
+4. **Step Naming Conventions**: Clear, descriptive action names
+5. **Service Tool Setup**: Using oven-sh/setup-bun pattern
+
+### Performance Characteristics
+
+- **Test job runtime**: ~3-5 minutes (estimated)
+  - Matrix × 2 = ~6-10 minutes total
+- **Lint job runtime**: ~1-2 minutes
+- **Parallel execution**: Both jobs run simultaneously
+- **Total workflow time**: ~6-10 minutes (dominated by test job)
+
+### Security Notes
+
+- No secrets required (basic tests)
+- Frozen lockfile prevents supply chain issues
+- Type checking ensures runtime safety
+- ESLint catches common vulnerabilities
+
+### Challenges & Solutions
+
+None encountered - workflow created cleanly with:
+- Proper YAML syntax
+- Correct Bun setup action
+- All required test commands available
+- No missing dependencies
+

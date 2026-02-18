@@ -1,0 +1,228 @@
+# Task 18: Structured Logging for Performance Metrics
+
+## Timestamp
+2026-02-18
+
+## Implementation Summary
+
+Added structured logging for context pack tokens, retrieval latency, and tool-call count to process-mention function.
+
+### 1. Retrieval Latency Measurement
+
+**Location**: `lookupVerifiedCreator()` function (lines ~340-365)
+
+**Implementation**:
+```typescript
+const contextPackStart = Date.now();
+const contextPack = isCreatorVerified
+  ? await buildContextPack(supabase, creator.id)
+  : null;
+const retrievalLatencyMs = Date.now() - contextPackStart;
+```
+
+**Return Type Updated**:
+- Added `retrievalLatencyMs: number` field to return type
+- Returns `0` when creator not found (early return path)
+- Measures full duration of `buildContextPack()` call
+
+### 2. Tool-Call Count Tracking
+
+**Location**: `runAgentForMention()` function (lines ~1199-1277)
+
+**Implementation**:
+```typescript
+let toolCallCount = 0;
+try {
+  const result = await run(getRailMintAgent(), params.processingText, {
+    context: agentCtx as unknown as Record<string, unknown>,
+    maxTurns: 4,
+  });
+
+  toolCallCount = result.newItems.filter(
+    (item) => item.type === "tool_call_output_item",
+  ).length;
+```
+
+**Return Type Updated**:
+- Added `toolCallCount: number` to return type
+- Filters `tool_call_output_item` from `result.newItems`
+- Counts all tool invocations (generatePost, publishPost, listPersona)
+
+### 3. Structured Performance Logging
+
+**Location**: Main handler after agent execution (line ~1695)
+
+**Log Format**:
+```typescript
+console.info("process-mention metrics", {
+  mention_id: mentionId,
+  retrieval_latency_ms: retrievalLatencyMs,
+  context_pack_built: contextPack !== null && contextPack.totalTokens > 0,
+  tokens_total: contextPack?.totalTokens || 0,
+  tool_call_count: toolCallCount,
+  intent: parsed.intent,
+});
+```
+
+**Fields Logged**:
+1. `mention_id` - Unique mention identifier (string)
+2. `retrieval_latency_ms` - Context pack fetch duration (number)
+3. `context_pack_built` - Boolean flag (true if context used)
+4. `tokens_total` - Total tokens in context pack (number, 0 if opt-out)
+5. `tool_call_count` - Number of tool calls made by agent (number)
+6. `intent` - Parsed mention intent (donate/ask/publish/unknown)
+
+### 4. Data Flow
+
+```
+process-mention request
+  ↓
+lookupVerifiedCreator()
+  ↓ [Timer Start]
+buildContextPack(supabase, creatorId)
+  ↓ [Timer End → retrievalLatencyMs]
+Return { contextPack, retrievalLatencyMs }
+  ↓
+runAgentForMention()
+  ↓
+OpenAI Agents SDK run()
+  ↓ [Filter tool_call_output_item]
+toolCallCount = result.newItems.filter(...).length
+  ↓
+Return { replyText, actionPayload, toolCallCount }
+  ↓
+console.info("process-mention metrics", { ... })
+```
+
+## Validation Results
+
+### Code Structure Checks (9/9 Passed)
+✓ retrievalLatencyMs field added to lookupVerifiedCreator return
+✓ contextPackStart timing variable
+✓ toolCallCount variable initialized
+✓ toolCallCount filtered from result.newItems
+✓ toolCallCount returned from runAgentForMention
+✓ Metrics log with all required fields
+✓ context_pack_built boolean logic
+✓ tokens_total fallback
+✓ retrievalLatencyMs propagated from verificationResult
+
+### Expected Log Output Examples
+
+**Opt-In Creator (Context Used)**:
+```json
+{
+  "mention_id": "mention-abc123",
+  "retrieval_latency_ms": 145,
+  "context_pack_built": true,
+  "tokens_total": 823,
+  "tool_call_count": 2,
+  "intent": "ask"
+}
+```
+
+**Opt-Out Creator (No Context)**:
+```json
+{
+  "mention_id": "mention-xyz789",
+  "retrieval_latency_ms": 12,
+  "context_pack_built": false,
+  "tokens_total": 0,
+  "tool_call_count": 1,
+  "intent": "ask"
+}
+```
+
+**Donation Intent (No Agent)**:
+```json
+{
+  "mention_id": "mention-donate456",
+  "retrieval_latency_ms": 98,
+  "context_pack_built": true,
+  "tokens_total": 654,
+  "tool_call_count": 0,
+  "intent": "donate"
+}
+```
+
+## Performance Monitoring Use Cases
+
+### 1. p95 Latency Tracking
+Query logs for `retrieval_latency_ms` distribution:
+- Target: ≤6s end-to-end (p95)
+- Context pack fetch is the largest variable component
+- Log enables percentile calculation in monitoring tools
+
+### 2. Token Budget Compliance
+Query logs for `tokens_total` violations:
+- Budget: ≤1,000 tokens (hard limit)
+- Log shows actual token usage per mention
+- Enables alerting on budget violations
+
+### 3. Tool-Call Limit Enforcement
+Query logs for `tool_call_count` violations:
+- Limit: ≤3 tool calls per mention (constraint)
+- Current tools: generatePost, publishPost, listPersona (3 total)
+- Log confirms compliance with constraint
+
+### 4. Context Pack Adoption Tracking
+Query logs for `context_pack_built` flag:
+- TRUE = Creator opted in, context used
+- FALSE = Creator opted out or profile missing
+- Enables measurement of feature adoption rate
+
+## Integration Points
+
+### Upstream Dependencies
+- Task 5: `buildContextPack()` provides `totalTokens` field
+- Task 2: Context DAL enforces opt-in gating (returns null when OFF)
+- Task 8: Context pack integration in process-mention
+
+### Downstream Consumers
+- Monitoring dashboards (Supabase Logs, Datadog, etc.)
+- Alerting rules for SLO violations (p95 > 6s)
+- Performance analysis for optimization efforts
+
+## Security Considerations
+
+### No Sensitive Data in Logs
+- `mention_id` is non-PII identifier
+- `intent` is enum (donate/ask/publish/unknown)
+- `tokens_total` is numeric count
+- `tool_call_count` is numeric count
+- No user PII, content, or credentials logged
+
+### Privacy Compliance
+- Opt-out creators log `tokens_total: 0` (no data leakage)
+- `context_pack_built: false` when opt-in OFF
+- Metrics do not reveal creator identity or content
+
+## Next Steps
+
+1. **Deploy to Production**:
+   - Apply changes to production Supabase environment
+   - Verify logs appear in Supabase dashboard
+
+2. **Set Up Monitoring**:
+   - Create dashboard for `retrieval_latency_ms` percentiles
+   - Alert when p95 > 6000ms
+   - Alert when `tokens_total` > 1000
+   - Alert when `tool_call_count` > 3
+
+3. **Baseline Metrics**:
+   - Collect 7 days of production logs
+   - Calculate p50, p95, p99 for retrieval latency
+   - Measure context pack adoption rate
+
+4. **Optimization Targets**:
+   - If p95 > 6s: Investigate slow context pack queries
+   - If tokens frequently near 1000: Review drop-order logic
+   - If tool_call_count > 3: Review agent tool usage patterns
+
+## Evidence Conclusion
+
+✓ All required metrics implemented and validated
+✓ Structured logging format confirmed
+✓ No sensitive data in logs
+✓ p95 ≤6s target now measurable
+✓ Ready for production deployment

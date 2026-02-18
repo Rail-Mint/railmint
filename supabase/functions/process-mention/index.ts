@@ -343,7 +343,13 @@ async function lookupVerifiedCreator(
 ) {
 	const normalizedHandle = normalizeHandle(authorHandle);
 	if (!normalizedHandle) {
-		return { found: false, verified: false, creator: null, contextPack: null };
+		return {
+			found: false,
+			verified: false,
+			creator: null,
+			contextPack: null,
+			retrievalLatencyMs: 0,
+		};
 	}
 
 	const { data: creator } = await supabase
@@ -355,15 +361,19 @@ async function lookupVerifiedCreator(
 		.maybeSingle();
 
 	const isCreatorVerified = creator && creator.x_verified === true;
+
+	const contextPackStart = Date.now();
 	const contextPack = isCreatorVerified
 		? await buildContextPack(supabase, creator.id)
 		: null;
+	const retrievalLatencyMs = Date.now() - contextPackStart;
 
 	return {
 		found: !!creator,
 		verified: creator?.x_verified === true,
 		creator: creator || null,
 		contextPack,
+		retrievalLatencyMs,
 	};
 }
 
@@ -1197,11 +1207,16 @@ async function runAgentForMention(params: {
 	};
 
 	let agentReply: string;
+	let toolCallCount = 0;
 	try {
 		const result = await run(getRailMintAgent(), params.processingText, {
 			context: agentCtx as unknown as Record<string, unknown>,
 			maxTurns: 4,
 		});
+
+		toolCallCount = result.newItems.filter(
+			(item) => item.type === "tool_call_output_item",
+		).length;
 
 		agentReply = extractAllTextOutput(result.newItems);
 		if (!agentReply && result.finalOutput) {
@@ -1274,7 +1289,7 @@ async function runAgentForMention(params: {
 	}
 
 	const reply = `${authorTag}${agentReply}`.trim() + safeCta;
-	return { replyText: limitReplyText(reply), actionPayload };
+	return { replyText: limitReplyText(reply), actionPayload, toolCallCount };
 }
 
 Deno.serve(async (req: Request) => {
@@ -1526,9 +1541,11 @@ Deno.serve(async (req: Request) => {
 		// Verified path: Continue with intent handling
 		const creator = verificationResult.creator;
 		const contextPack = verificationResult.contextPack;
+		const retrievalLatencyMs = verificationResult.retrievalLatencyMs;
 		const openEpoch = (await fetchOpenEpoch(supabase)) as any;
 		let actionPayload: Record<string, unknown> = {};
 		let agentReplyText: string | null = null;
+		const toolCallCount = 0;
 
 		if (parsed.intent === "donate") {
 			if (!parsed.donationAmount || !parsed.donationTargetHandle) {
@@ -1671,8 +1688,18 @@ Deno.serve(async (req: Request) => {
 					: null,
 			});
 			agentReplyText = agentResult.replyText;
+			toolCallCount = agentResult.toolCallCount || 0;
 			actionPayload = { ...actionPayload, ...agentResult.actionPayload };
 		}
+
+		console.info("process-mention metrics", {
+			mention_id: mentionId,
+			retrieval_latency_ms: retrievalLatencyMs,
+			context_pack_built: contextPack !== null && contextPack.totalTokens > 0,
+			tokens_total: contextPack?.totalTokens || 0,
+			tool_call_count: toolCallCount,
+			intent: parsed.intent,
+		});
 
 		const agentHandle = normalizeHandle(Deno.env.get("X_AGENT_USERNAME"));
 		const shouldReply =
