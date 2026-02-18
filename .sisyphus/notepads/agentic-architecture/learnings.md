@@ -1235,3 +1235,44 @@ None encountered - workflow created cleanly with:
 - All required test commands available
 - No missing dependencies
 
+
+## Task 16: Studio Profile UI Tests (2026-02-18)
+
+### Test Suite Created
+- **File**: `tests/studio-profile.spec.ts` (16 comprehensive UI tests)
+- **Config**: `playwright.config.ts` (Playwright test runner configuration)
+- **Coverage**: All profile fields, opt-in toggle, conditional rendering, news preferences
+
+### Test Categories
+1. **Profile Fields (5 tests)**: Bio (500 char limit), tags, interests, specialties with comma-separated input
+2. **Opt-in Toggle (2 tests)**: Default OFF state, toggle ON/OFF functionality
+3. **Conditional Rendering (4 tests)**: News preferences visibility based on opt-in state
+4. **News Preferences (4 tests)**: Topics input, cadence dropdown (hourly/daily/weekly), toggle state
+5. **Form Controls (2 tests)**: Cancel reverts changes, Save button visibility
+
+### Key Patterns
+- **Playwright Setup**: Auto-start dev server via webServer config
+- **Locator Strategy**: Accessibility-first (getByRole, getByPlaceholder, getByText)
+- **Async Handling**: page.waitForTimeout(200) for React state updates after toggle clicks
+- **Conditional Testing**: Check toggle state before asserting visibility of dependent fields
+
+### Blocker Encountered
+- `/studio/profile` route requires Web3 wallet authentication
+- Tests timeout waiting for Edit button (auth wall blocks component rendering)
+- **Solution Options**: Mock wallet provider, test route without auth, or E2E with persistent MetaMask context
+
+### Testing Wisdom
+- UI tests for Web3 apps need wallet mocking infrastructure
+- Consider test routes that render components with mock data (bypasses auth)
+- Playwright's `reuseExistingServer: true` useful for dev iteration
+
+### Dependencies
+- `@playwright/test@1.58.2` installed
+- Chromium browser v1208 downloaded
+- Test runner config: 120s timeout, HTML reporter
+
+### Next Steps for Runnable Tests
+To make tests executable without auth:
+1. Add Synpress or custom wallet mock
+2. Create `/test/profile` route with StudioProfile + mock data
+3. Use Playwright's `storageState` to persist auth across tests
