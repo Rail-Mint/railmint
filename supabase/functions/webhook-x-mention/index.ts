@@ -155,19 +155,35 @@ Deno.serve(async (req: Request) => {
 
 	try {
 		const token = Deno.env.get("TWITTERAPI_WEBHOOK_TOKEN");
-		if (token) {
-			const headerToken = req.headers.get("x-webhook-token")?.trim();
-			const authHeader = req.headers.get("authorization")?.trim();
-			const authToken = authHeader?.replace(/^Bearer\s+/i, "")?.trim();
-			if (token !== headerToken && token !== authToken) {
-				return new Response(JSON.stringify({ error: "Unauthorized webhook" }), {
-					status: 401,
-					headers: {
-						...corsHeaders,
-						"Content-Type": "application/json",
-					},
-				});
+		if (!token) {
+			return new Response(
+				JSON.stringify({ error: "Webhook authentication not configured" }),
+				{
+					status: 500,
+					headers: { ...corsHeaders, "Content-Type": "application/json" },
+				},
+			);
+		}
+
+		const headerToken = req.headers.get("x-webhook-token")?.trim() ?? "";
+		const authHeader = req.headers.get("authorization")?.trim() ?? "";
+		const authToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+		// Constant-time comparison to prevent timing attacks
+		function constantTimeEqual(a: string, b: string): boolean {
+			if (a.length !== b.length) return false;
+			let result = 0;
+			for (let i = 0; i < a.length; i++) {
+				result |= a.charCodeAt(i) ^ b.charCodeAt(i);
 			}
+			return result === 0;
+		}
+
+		if (!constantTimeEqual(token, headerToken) && !constantTimeEqual(token, authToken)) {
+			return new Response(JSON.stringify({ error: "Unauthorized webhook" }), {
+				status: 401,
+				headers: { ...corsHeaders, "Content-Type": "application/json" },
+			});
 		}
 
 		const rawBody = await req.text();
