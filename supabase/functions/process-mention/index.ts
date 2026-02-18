@@ -249,15 +249,25 @@ function constantTimeEqualHex(a: string, b: string): boolean {
 	return result === 0;
 }
 
+function constantTimeEqualStr(a: string, b: string): boolean {
+	// Pad to same length to avoid length-based timing leak
+	const maxLen = Math.max(a.length, b.length);
+	let result = a.length === b.length ? 0 : 1;
+	for (let i = 0; i < maxLen; i++) {
+		result |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+	}
+	return result === 0;
+}
+
 function isInternalServiceCall(req: Request): boolean {
 	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 	if (!serviceRoleKey) return false;
 
-	const authorization = req.headers.get("authorization")?.trim();
-	const apikey = req.headers.get("apikey")?.trim();
-	const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
+	const authorization = req.headers.get("authorization")?.trim() ?? "";
+	const apikey = req.headers.get("apikey")?.trim() ?? "";
+	const authToken = authorization.replace(/^Bearer\s+/i, "").trim();
 
-	return authToken === serviceRoleKey || apikey === serviceRoleKey;
+	return constantTimeEqualStr(authToken, serviceRoleKey) || constantTimeEqualStr(apikey, serviceRoleKey);
 }
 
 async function verifyWebhookSignature(params: {
