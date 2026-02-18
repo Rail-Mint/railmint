@@ -192,27 +192,27 @@ export function StudioOnboarding({ address, onComplete }: Props) {
     }
   }, [form, address, contractsDeployed, registerCreator, toast, onComplete, invokeWithSignature]);
 
-  // Listen for postMessage from the OAuth popup (step 4)
+  // Listen for OAuth result via postMessage OR BroadcastChannel
+  // (BroadcastChannel is needed when window.opener is lost after X's multi-hop redirects)
   useEffect(() => {
-    const handler = async (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (!event.data?.type?.startsWith("x-oauth")) return;
+    const handleOAuthMessage = async (message: { type: string; code?: string; state?: string; error?: string }) => {
+      if (!message.type?.startsWith("x-oauth")) return;
 
       popupRef.current?.close();
       popupRef.current = null;
 
-      if (event.data.type === "x-oauth-error") {
+      if (message.type === "x-oauth-error") {
         toast({
           title: "Verification failed",
-          description: event.data.error || "X OAuth error",
+          description: message.error || "X OAuth error",
           variant: "destructive",
         });
         setVerifyingX(false);
         return;
       }
 
-      if (event.data.type === "x-oauth-complete") {
-        const { code, state } = event.data;
+      if (message.type === "x-oauth-complete") {
+        const { code, state } = message;
         const savedState = localStorage.getItem("x_oauth_state");
         if (state !== savedState) {
           toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
@@ -248,8 +248,31 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       }
     };
 
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
+    const postMessageHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      handleOAuthMessage(event.data);
+    };
+    window.addEventListener("message", postMessageHandler);
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("x_oauth_channel");
+      bc.onmessage = (event) => handleOAuthMessage(event.data);
+    } catch {}
+
+    const pollInterval = setInterval(() => {
+      const raw = localStorage.getItem("x_oauth_result");
+      if (raw) {
+        localStorage.removeItem("x_oauth_result");
+        try { handleOAuthMessage(JSON.parse(raw)); } catch {}
+      }
+    }, 500);
+
+    return () => {
+      window.removeEventListener("message", postMessageHandler);
+      bc?.close();
+      clearInterval(pollInterval);
+    };
   }, [address, invokeWithSignature, onComplete, toast]);
 
   const handleVerifyX = useCallback(async () => {
