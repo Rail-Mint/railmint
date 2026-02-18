@@ -1,0 +1,154 @@
+News Digest Fetch Implementation Verification
+============================================
+Timestamp: 2026-02-18
+
+Implementation Details:
+======================
+
+1. API Integration: NewsAPI.org
+   - Free tier: 100 requests/day
+   - Endpoint: /v2/everything
+   - Parameters: query (topic), pageSize=10, sortBy=publishedAt, language=en
+   - User-Agent: RailMint-Agent
+
+2. Rate Limiting & Error Handling:
+   - Retry logic: 3 attempts with exponential backoff
+   - 429 (Rate Limit) detection → automatic backoff
+   - Backoff formula: 2^attempt * 1000ms (1s, 2s, 4s)
+
+3. Data Normalization:
+   Schema: NewsDigestBullet
+   {
+     source: string,      // e.g., "TechCrunch"
+     url: string,         // Article URL
+     timestamp: string,   // ISO 8601 publishedAt
+     topic: string,       // Creator's topic (e.g., "AI")
+     text: string         // title + description
+   }
+
+4. Cadence Filtering:
+   - Hourly: Fetch if last_fetched_at > 1 hour ago
+   - Daily: Fetch if last_fetched_at > 1 day ago
+   - Weekly: Fetch if last_fetched_at > 7 days ago
+   - Skips fetch if within cadence window
+
+5. Performance Optimizations:
+   - Topic-level caching: Same topic → reuse API response
+   - Concurrency control: Default 3 concurrent creators
+   - Batch processing: Process up to 50 creators per invocation
+   - Cache shared across all creators in single run
+
+6. Storage Pattern:
+   - Table: creator_news_digests
+   - Upsert on (creator_id, topic) conflict
+   - JSONB array: digest_bullets
+   - Tracks: last_fetched_at for cadence filtering
+
+7. Service Role Auth:
+   - Follows update-summaries pattern (lines 256-265)
+   - Validates Bearer token or apikey header
+   - Requires SUPABASE_SERVICE_ROLE_KEY match
+
+Expected Behavior:
+==================
+
+Scenario 1: Opt-in Creator (context_opt_in=true, news_enabled=true)
+✅ Query matches creator
+✅ Cadence window checked
+✅ News fetched from API for each topic
+✅ Normalized to JSONB bullets
+✅ Stored in creator_news_digests
+
+Scenario 2: Opt-out Creator (context_opt_in=false)
+✅ Query excludes creator (.eq('context_opt_in', true))
+✅ No fetch initiated
+✅ No storage operation
+
+Scenario 3: News-disabled Creator (news_enabled=false)
+✅ Query excludes creator (.eq('news_enabled', true))
+✅ No fetch initiated
+✅ No storage operation
+
+Function Invocation:
+====================
+
+Endpoint: ${SUPABASE_URL}/functions/v1/fetch-news-digests
+Method: POST
+Auth: Bearer ${SUPABASE_SERVICE_ROLE_KEY}
+Body:
+{
+  "max_creators": 50,    // Optional (default 50, max 200)
+  "concurrency": 3       // Optional (default 3, max 10)
+}
+
+Response:
+{
+  "success": true,
+  "scanned": 10,          // Creators queried
+  "processed": 5,         // Creators with updates
+  "failed": 0,            // Failed operations
+  "topics_updated": 12,   // Total topics fetched
+  "errors": []
+}
+
+Code Patterns Verified:
+========================
+
+✅ ESM imports (esm.sh/@supabase/supabase-js@2)
+✅ Deno.serve() entry point
+✅ CORS headers configured
+✅ Service role auth enforcement
+✅ runWithConcurrency helper (lines 22-45)
+✅ clampInt for input validation
+✅ Opt-in enforcement at query level
+✅ Error handling with try-catch per creator
+✅ Graceful failure (returns success:false, continues batch)
+
+Security Verification:
+======================
+
+✅ Opt-in enforced via SQL WHERE clause
+✅ Double flag check: context_opt_in AND news_enabled
+✅ No fetch without explicit consent
+✅ Service role required (no user-level access)
+✅ Input validation (max_creators, concurrency clamped)
+✅ Rate limiting prevents API abuse
+
+Integration Points:
+===================
+
+1. Context DAL (Task 2):
+   - Uses creator_profiles table
+   - Reads: creator_id, news_topics, news_cadence, context_opt_in, news_enabled
+   - Writes: creator_news_digests table
+
+2. Update Summaries (Task 6):
+   - Reuses: runWithConcurrency pattern
+   - Reuses: Service role auth pattern
+   - Reuses: Batch processing approach
+
+3. Process Mention (Task 4):
+   - Will read from: creator_news_digests
+   - Uses: getNewsDigest() from context-dal
+   - Cached digests (no live fetch)
+
+Deployment Requirements:
+=========================
+
+Environment Variables:
+- SUPABASE_URL (required)
+- SUPABASE_SERVICE_ROLE_KEY (required)
+- NEWS_API_KEY (required) ← NEW
+- NEWS_MAX_CREATORS (optional, default 50)
+- NEWS_CONCURRENCY (optional, default 3)
+
+Scheduled Invocation:
+- Use Supabase pg_cron or external scheduler
+- Recommended frequency: Hourly
+- Example cron: 0 * * * * (every hour at :00)
+
+Command:
+curl -X POST ${SUPABASE_URL}/functions/v1/fetch-news-digests \\
+  -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"max_creators":50,"concurrency":3}'

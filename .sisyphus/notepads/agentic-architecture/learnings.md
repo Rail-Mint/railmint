@@ -381,3 +381,171 @@ DAL module ready for integration in context pack builder (Task 5) and other cons
 
 ---
 
+## Task 7: News Digest Fetcher (Completed)
+
+**Implementation**: Created `supabase/functions/fetch-news-digests/index.ts`
+
+**Key Features**:
+- Scheduled job that fetches news from NewsAPI.org
+- Enforces DOUBLE opt-in: `context_opt_in = true` AND `news_enabled = true`
+- Normalizes to JSONB format: `{source, url, timestamp, topic, text}`
+- Respects cadence preferences (hourly/daily/weekly)
+- Topic-level caching to avoid duplicate API calls
+- Rate limiting with exponential backoff (3 retries)
+- Batch processing with concurrency control (default: 3 concurrent creators)
+
+**Architecture**:
+- Follows update-summaries pattern (service role auth, CORS, batch processing)
+- SQL-level enforcement: `.eq('context_opt_in', true).eq('news_enabled', true)`
+- Application-level defense: Double-check flags before processing
+- Cadence window filtering: Only fetch if `last_fetched_at` outside window
+- Topic cache shared across creators in single invocation
+
+**Opt-In Enforcement (Critical Security)**:
+1. **SQL Query Filter (Primary Defense)**:
+   ```typescript
+   .from('creator_profiles')
+   .select('creator_id, news_topics, news_cadence, context_opt_in, news_enabled')
+   .eq('context_opt_in', true)  // GATE 1
+   .eq('news_enabled', true)    // GATE 2
+   ```
+   Result: Ineligible creators NEVER enter processing pipeline
+
+2. **Application-Level Check (Defense in Depth)**:
+   ```typescript
+   if (!creator.context_opt_in || !creator.news_enabled) {
+     return { success: true, topics_updated: 0 };
+   }
+   ```
+   Result: Even if SQL filter bypassed, app blocks
+
+3. **Cadence-Based Rate Limiting**:
+   - Checks `last_fetched_at` against cadence window (hourly/daily/weekly)
+   - Skips fetch if already fetched within window
+   - Result: No redundant API calls, respects creator preferences
+
+**API Integration (NewsAPI.org)**:
+- Endpoint: `https://newsapi.org/v2/everything`
+- Parameters: `q={topic}`, `pageSize=10`, `sortBy=publishedAt`, `language=en`
+- Free tier: 100 requests/day
+- Rate limit handling: 429 detection → exponential backoff (1s, 2s, 4s)
+- Retry logic: 3 attempts with timeout between retries
+
+**Data Normalization**:
+```typescript
+type NewsDigestBullet = {
+  source: string;      // "TechCrunch"
+  url: string;         // Article URL
+  timestamp: string;   // ISO 8601
+  topic: string;       // "AI", "blockchain", etc.
+  text: string;        // title + description
+}
+```
+
+**Storage Pattern**:
+- Table: `creator_news_digests`
+- Upsert on conflict: `(creator_id, topic)`
+- JSONB field: `digest_bullets` (array of NewsDigestBullet)
+- Tracking: `last_fetched_at` for cadence filtering
+
+**Performance Optimizations**:
+- **Topic caching**: Same topic across multiple creators → single API call
+- **Concurrency control**: Default 3 concurrent creators (configurable)
+- **Batch processing**: Up to 50 creators per invocation (configurable)
+- **Early exit**: Skip creators within cadence window (no API call)
+
+**Validation Results**:
+- ✅ SQL-level opt-in enforcement verified (line 271-279)
+- ✅ Application-level double-check verified (line 139-149)
+- ✅ Cadence window logic verified (line 150-176)
+- ✅ Topic caching implementation verified (line 180-189)
+- ✅ Rate limiting with exponential backoff verified (line 77-106)
+- ✅ JSONB normalization verified (line 53-58)
+- ✅ Service role auth pattern verified (line 236-251)
+
+**Configuration**:
+- Environment Variables:
+  - `NEWS_API_KEY` (required) - NewsAPI.org API key
+  - `NEWS_MAX_CREATORS` (optional, default 50, max 200)
+  - `NEWS_CONCURRENCY` (optional, default 3, max 10)
+  - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (required)
+
+**Scheduled Execution**:
+- Recommended frequency: Hourly
+- Cron pattern: `0 * * * *` (every hour at :00)
+- Invocation: POST to `/functions/v1/fetch-news-digests` with service role key
+- Body: `{"max_creators": 50, "concurrency": 3}`
+
+**Key Patterns Learned**:
+
+1. **Double Opt-In Enforcement**:
+   - SQL query filters at database level (most efficient)
+   - Application-level redundant check (defense in depth)
+   - Result: Zero-knowledge for opt-out creators (no processing, no API calls)
+
+2. **Cadence-Based Fetch Control**:
+   - `getCadenceWindow()` calculates time threshold based on preference
+   - Query `last_fetched_at` before fetching
+   - Skip if within window (respects creator preference)
+
+3. **Topic-Level Caching**:
+   - Shared Map across batch invocation
+   - Same topic → reuse API response
+   - Reduces API calls from O(creators × topics) to O(unique topics)
+
+4. **Rate Limiting Strategy**:
+   - Detect 429 status code
+   - Exponential backoff: 2^attempt × 1000ms
+   - 3 retry attempts before failure
+   - Prevents API ban from rate limit violations
+
+5. **Batch Processing Pattern**:
+   - Use `runWithConcurrency` helper (from update-summaries)
+   - Configurable concurrency (default 3, max 10)
+   - Per-creator error handling (graceful failure, continue batch)
+   - Aggregate results for reporting
+
+**Integration Points**:
+
+1. **Task 2 (Context DAL)**:
+   - Reads from: `creator_profiles` table
+   - Writes to: `creator_news_digests` table
+   - Uses: `getNewsDigest()` for retrieval (downstream)
+
+2. **Task 6 (Update Summaries)**:
+   - Reuses: `runWithConcurrency` pattern
+   - Reuses: Service role auth pattern
+   - Reuses: Batch processing approach
+   - Reuses: `.eq('context_opt_in', true)` filter
+
+3. **Task 4 (Process Mention - Future)**:
+   - Will read: `creator_news_digests` via `getNewsDigest()`
+   - No live fetch: Uses cached digests only
+   - Opt-in enforced: DAL returns empty array if opt-out
+
+**Security Verification**:
+- ✅ No fetch for `context_opt_in = false` creators
+- ✅ No fetch for `news_enabled = false` creators
+- ✅ Only eligible creators processed (SQL + app enforcement)
+- ✅ Service role required (no user-level access)
+- ✅ Input validation (concurrency, max_creators clamped)
+- ✅ API key from environment (not hardcoded)
+
+**Evidence Files**:
+- `.sisyphus/evidence/task-7-news-fetch.txt` - Implementation verification
+- `.sisyphus/evidence/task-7-opt-in-enforcement.txt` - Security verification
+
+**Dependencies**:
+- Requires Task 1 (migrations for creator_news_digests table)
+- Requires Task 2 (context-dal for types and patterns)
+- Used by Task 4 (process-mention will read digests)
+
+**Next Steps**:
+- Deploy function to Supabase
+- Add NEWS_API_KEY to environment
+- Schedule hourly invocation via pg_cron or external scheduler
+- Monitor API usage (100 requests/day limit)
+- Integrate with process-mention (read digests, no live fetch)
+
+---
+
