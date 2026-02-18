@@ -476,7 +476,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-6-summary-off.txt
   ```
 
-- [ ] 7. News digest fetcher + storage (scheduled)
+- [x] 7. News digest fetcher + storage (scheduled)
 
   **What to do**:
   - Add scheduled job to fetch news from allowlist sources
@@ -527,7 +527,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-7-digest-off.txt
   ```
 
-- [ ] 8. Process-mention integration with context pack
+- [x] 8. Process-mention integration with context pack
 
   **What to do**:
   - Integrate context pack builder into `process-mention`
@@ -579,7 +579,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-8-optout.txt
   ```
 
-- [ ] 9. Generate-post prompt integration (context sections)
+- [x] 9. Generate-post prompt integration (context sections)
 
   **What to do**:
   - Update generate-post prompt templates to accept context pack sections
@@ -628,7 +628,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-9-injection.txt
   ```
 
-- [ ] 10. Persona/profile merge logic (structured profile + persona_text)
+- [x] 10. Persona/profile merge logic (structured profile + persona_text)
 
   **What to do**:
   - Merge structured profile fields with existing persona_text
@@ -678,7 +678,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-10-retain.txt
   ```
 
-- [ ] 11. Studio/Onboarding UI: profile fields + persona editor
+- [x] 11. Studio/Onboarding UI: profile fields + persona editor
 
   **What to do**:
   - Add structured profile fields to Studio/Onboarding
@@ -731,7 +731,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-11-persona.png
   ```
 
-- [ ] 12. Studio UI: opt-in toggle + news topics + cadence
+- [x] 12. Studio UI: opt-in toggle + news topics + cadence
 
   **What to do**:
   - Add opt-in toggle (default OFF)
