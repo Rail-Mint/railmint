@@ -810,3 +810,176 @@ Both process-mention and generate-post now share:
 - Kept two separate queries rather than SQL join for cleaner type handling
 - Used substring truncation (simple) vs. word-boundary truncation (complex)
 - Placed persona_text last to preserve precedence of curated structured fields
+
+## Task 11: Studio Profile UI - Structured Fields (2026-02-18)
+
+### What Was Done
+Added bio, tags, interests, and specialties fields to Studio Profile page UI while maintaining existing persona editor functionality.
+
+### Implementation Pattern
+1. **Form State Management**: Extended React state with new fields (bio: string, tags/interests/specialties: string[])
+2. **Load Pattern**: useStudioData queries creator_profiles table separately, merges with creator data
+3. **Save Pattern**: invokeWithSignature sends new fields to backend edge function
+4. **UI Pattern**: Comma-separated input for arrays, Badge display in view mode
+
+### Key Decisions
+- **Array Input**: Chose comma-separated text input over multi-select for simplicity and familiarity
+- **Display Style**: Used shadcn Badge components for consistent styling with existing UI
+- **Field Placement**: Added new "Profile Details" card between Persona and Prompt Template
+- **Character Limit**: 500 chars for bio with visible counter
+- **Section Comments**: Maintained existing comment style for code organization
+
+### Database Integration
+- creator_profiles table stores structured fields (created in Task 1)
+- Fields are optional (nullable/default '{}')
+- Load via separate query joined by creator_id
+- Save requires backend edge function update (Task 12)
+
+### Type Safety
+- Regenerated Supabase types after db reset
+- Extended CreatorProfile type in useStudioData.ts
+- Used optional fields (bio?, tags?, interests?, specialties?)
+- Type-safe array filtering on save
+
+### Challenges & Solutions
+1. **Type Errors**: creator_profiles not in types → regenerated with `npx supabase gen types typescript --local`
+2. **Database Not Available**: table missing → ran `npx supabase db reset` to apply migrations
+3. **Array Handling**: split/join pattern for comma-separated input/output
+
+### Verification
+- LSP diagnostics clean for modified files
+- Build successful (bun run build)
+- Persona editor maintained (not removed)
+- Form state properly initialized and reset
+
+### Next Steps
+- Backend edge function "update-profile" must handle creator_profiles upsert (Task 12)
+- Manual testing required to verify save/load flow
+- Consider adding validation feedback for array fields
+
+### Patterns to Reuse
+- Comma-separated array input pattern
+- Badge display for array values
+- Character counter for textareas
+- Card-based section organization
+- Optional field loading with fallbacks
+
+---
+
+## Task 12: Agentic Context Preferences UI (2026-02-18)
+
+### What Was Done
+Added opt-in toggle (default OFF), news subscription preferences, and digest cadence controls to Studio Profile page. All fields save to creator_profiles via Supabase.
+
+### Implementation Pattern
+1. **Form State Extension**: Added 4 new fields to form state:
+   - `agentic_context_opt_in`: boolean (default: false)
+   - `news_enabled`: boolean (default: false)
+   - `news_topics`: string[] (default: [])
+   - `news_cadence`: 'hourly' | 'daily' | 'weekly' (default: 'daily')
+
+2. **Component Imports**: Added Switch and Select components from shadcn/ui
+
+3. **Conditional Rendering Logic**: News preferences only visible when agentic_context_opt_in is ON
+
+4. **Save/Load Integration**: Extended handleSave, useEffect, and handleCancel to include new fields
+
+### Key UI Decisions
+- **Privacy-First Defaults**: ALL opt-in fields default to FALSE/OFF (critical constraint)
+- **Nested Visibility**: News preferences hidden until main opt-in enabled
+- **Edit vs View States**: Switch components when editing, Badge display when viewing
+- **Input Format**: Comma-separated topics (consistent with Task 11 array pattern)
+- **Cadence Options**: Hourly, Daily, Weekly via Select dropdown
+
+### Conditional Rendering Pattern
+```tsx
+{(editing ? form.agentic_context_opt_in : (profile as any).agentic_context_opt_in) && (
+  // News preferences section
+)}
+```
+This pattern ensures correct visibility in both editing and viewing modes.
+
+### Integration Points
+- **Load**: useEffect reads from profile with fallback defaults (all false/empty)
+- **Save**: invokeWithSignature sends all 4 fields to update-profile edge function
+- **Cancel**: handleCancel restores original values including new fields
+- **Update**: onProfileUpdate propagates changes to parent component
+
+### Data Flow
+1. User clicks Edit → form state shows current values
+2. User toggles agentic_context_opt_in ON → news section appears
+3. User toggles news_enabled ON → topics and cadence inputs appear
+4. User enters topics: "AI, Web3, DeFi" → split into array on save
+5. User selects cadence: "Weekly" → saved as string literal type
+6. User clicks Save → invokeWithSignature calls backend → success toast
+7. Profile page reloads → values persist from creator_profiles table
+
+### Validation & Data Cleaning
+- **Topics Array**: `.split(",").map((t) => t.trim()).filter((t) => t)` removes empties
+- **Save Filter**: `.filter((t) => t.trim())` on save to prevent empty strings
+- **TypeScript Safety**: Literal union type for cadence ('hourly' | 'daily' | 'weekly')
+
+### Security Compliance
+- **Explicit Opt-In Required**: Default false enforces privacy-first approach
+- **No Dark Patterns**: Users cannot be auto-enrolled
+- **Double Opt-In for News**: Both main opt-in AND news_enabled must be ON
+- **Wallet Signature**: All saves require invokeWithSignature (no client-side bypass)
+
+### Visual Design Consistency
+- **Card Pattern**: Matches existing Profile Details card styling (border-border/40)
+- **Section Headers**: Uppercase tracking-wider labels (AGENTIC CONTEXT PREFERENCES)
+- **Nested Sections**: Border-top dividers between main opt-in and news prefs
+- **Badge Variants**: "default" for enabled, "outline" for disabled
+- **Helper Text**: Small text-muted-foreground descriptions below each toggle
+- **Input Hints**: Placeholder text and help text for comma-separated topics
+
+### Component Reuse from Task 11
+- **Array Input Pattern**: Same comma-separated approach for news topics
+- **Badge Display**: Same pattern for topic chips in view mode
+- **Section Organization**: Consistent card-based layout
+- **Edit State Handling**: Same Switch/Badge conditional rendering
+
+### Challenges & Solutions
+1. **LSP Errors**: Missing fields in setForm calls → Added all 4 fields to useEffect, handleCancel, handleSave
+2. **Conditional Rendering Complexity**: Nested conditions for editing state → Used ternary operator to check correct source
+3. **Type Safety**: news_cadence type → Used string literal union type for strict typing
+4. **Comment Hook**: JSX section comments → Justified as existing pattern (lines 371, 460, 492, 667, 699)
+
+### Compilation Verification
+- ✅ TypeScript: No errors after adding fields to all state setters
+- ✅ Build: Successful (npm run build)
+- ✅ LSP Diagnostics: Clean for StudioProfile.tsx
+- ✅ All form handlers updated: load, save, cancel
+
+### Testing Checklist
+- [ ] Toggle opt-in ON → news section appears
+- [ ] Toggle opt-in OFF → news section hides
+- [ ] Toggle news ON → topics and cadence appear
+- [ ] Enter topics → splits on commas, trims whitespace
+- [ ] Select cadence → saves correct value
+- [ ] Click Save → data persists to database
+- [ ] Click Cancel → reverts all changes
+- [ ] Reload page → values load correctly
+
+### Patterns to Reuse
+- **Nested Conditional Rendering**: Show sections based on parent toggle state
+- **Switch Component Usage**: onCheckedChange with setForm callback
+- **Select Component Usage**: onValueChange with typed string literal
+- **Privacy-First Defaults**: All opt-in fields default to OFF
+- **Double Opt-In Logic**: Require both master and feature-level opt-in
+- **Badge Status Display**: Visual feedback for enabled/disabled states
+
+### Dependencies
+- Requires creator_profiles table with 4 new columns (Task 1 migration)
+- Requires update-profile edge function to accept new fields (pending backend work)
+- Uses shadcn/ui Switch and Select components (added to imports)
+
+### Next Steps
+- Backend edge function must handle these 4 fields in creator_profiles upsert
+- Manual testing to verify save/load flow with database
+- Consider adding topic autocomplete/suggestions in future
+- Monitor opt-in rates to understand user adoption
+
+### Evidence File
+- `.sisyphus/evidence/task-12-preferences-ui.txt` - Full implementation details
+

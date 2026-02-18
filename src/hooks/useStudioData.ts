@@ -11,6 +11,10 @@ export type CreatorProfile = {
 	x_verified: boolean;
 	x_verified_at: string | null;
 	is_active: boolean;
+	bio?: string;
+	tags?: string[];
+	interests?: string[];
+	specialties?: string[];
 } | null;
 
 export type PostPreview = {
@@ -101,15 +105,28 @@ export function useStudioData(address: string | undefined) {
 			]);
 
 			const creator = creatorResult.data;
-			const creatorWithVerification = creator
-				? {
-						...creator,
-						x_verified: (creator as any).x_verified ?? false,
-						x_verified_at: (creator as any).x_verified_at ?? null,
-						is_active: (creator as any).is_active ?? true,
-					}
-				: null;
-			setProfile(creatorWithVerification);
+
+			let profileData = null;
+			if (creator?.id) {
+				const { data: profileFields } = await supabase
+					.from("creator_profiles")
+					.select("bio, tags, interests, specialties")
+					.eq("creator_id", creator.id)
+					.maybeSingle();
+
+				profileData = {
+					...creator,
+					x_verified: (creator as any).x_verified ?? false,
+					x_verified_at: (creator as any).x_verified_at ?? null,
+					is_active: (creator as any).is_active ?? true,
+					bio: profileFields?.bio,
+					tags: profileFields?.tags,
+					interests: profileFields?.interests,
+					specialties: profileFields?.specialties,
+				};
+			}
+
+			setProfile(profileData);
 			setOpenEpoch(openEpochResult.data ?? null);
 
 			if (!creator?.id) {

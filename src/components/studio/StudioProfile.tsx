@@ -5,6 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon } from "@/components/ui/x-icon";
 import { useToast } from "@/hooks/use-toast";
@@ -41,6 +49,14 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		clone_name: "",
 		persona_text: "",
 		prompt_template: "",
+		bio: "",
+		tags: [] as string[],
+		interests: [] as string[],
+		specialties: [] as string[],
+		agentic_context_opt_in: false,
+		news_enabled: false,
+		news_topics: [] as string[],
+		news_cadence: "daily" as "hourly" | "daily" | "weekly",
 	});
 	const [saving, setSaving] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
@@ -57,6 +73,15 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 				clone_name: profile.clone_name,
 				persona_text: profile.persona_text,
 				prompt_template: profile.prompt_template,
+				bio: (profile as any).bio || "",
+				tags: (profile as any).tags || [],
+				interests: (profile as any).interests || [],
+				specialties: (profile as any).specialties || [],
+				agentic_context_opt_in:
+					(profile as any).agentic_context_opt_in || false,
+				news_enabled: (profile as any).news_enabled || false,
+				news_topics: (profile as any).news_topics || [],
+				news_cadence: (profile as any).news_cadence || "daily",
 			});
 		}
 	}, [profile]);
@@ -83,6 +108,14 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 					clone_name: form.clone_name.trim(),
 					persona_text: form.persona_text.trim(),
 					prompt_template: form.prompt_template.trim(),
+					bio: form.bio.trim(),
+					tags: form.tags.filter((t) => t.trim()),
+					interests: form.interests.filter((i) => i.trim()),
+					specialties: form.specialties.filter((s) => s.trim()),
+					agentic_context_opt_in: form.agentic_context_opt_in,
+					news_enabled: form.news_enabled,
+					news_topics: form.news_topics.filter((t) => t.trim()),
+					news_cadence: form.news_cadence,
 				},
 				profile.wallet_address,
 			);
@@ -92,7 +125,15 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 				clone_name: form.clone_name.trim(),
 				persona_text: form.persona_text.trim(),
 				prompt_template: form.prompt_template.trim(),
-			});
+				bio: form.bio.trim(),
+				tags: form.tags.filter((t) => t.trim()),
+				interests: form.interests.filter((i) => i.trim()),
+				specialties: form.specialties.filter((s) => s.trim()),
+				agentic_context_opt_in: form.agentic_context_opt_in,
+				news_enabled: form.news_enabled,
+				news_topics: form.news_topics.filter((t) => t.trim()),
+				news_cadence: form.news_cadence,
+			} as any);
 			setEditing(false);
 			toast({ title: "Profile saved" });
 		} catch (err: any) {
@@ -112,6 +153,15 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 				clone_name: profile.clone_name,
 				persona_text: profile.persona_text,
 				prompt_template: profile.prompt_template,
+				bio: (profile as any).bio || "",
+				tags: (profile as any).tags || [],
+				interests: (profile as any).interests || [],
+				specialties: (profile as any).specialties || [],
+				agentic_context_opt_in:
+					(profile as any).agentic_context_opt_in || false,
+				news_enabled: (profile as any).news_enabled || false,
+				news_topics: (profile as any).news_topics || [],
+				news_cadence: (profile as any).news_cadence || "daily",
 			});
 		}
 		setErrors({});
@@ -465,6 +515,342 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 						<p className="text-sm leading-relaxed text-muted-foreground">
 							{profile.persona_text}
 						</p>
+					)}
+				</CardContent>
+			</Card>
+
+			{/* Structured Profile Fields */}
+			<Card className="border-border/40">
+				<CardHeader className="pb-2">
+					<CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+						Profile Details
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					{/* Bio */}
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+							Bio
+						</label>
+						{editing ? (
+							<div>
+								<Textarea
+									rows={3}
+									maxLength={500}
+									value={form.bio}
+									onChange={(e) =>
+										setForm((f) => ({ ...f, bio: e.target.value }))
+									}
+									placeholder="Brief bio about yourself..."
+									className="border-border/40 resize-none"
+								/>
+								<p className="mt-1 text-xs text-muted-foreground text-right">
+									{form.bio.length}/500
+								</p>
+							</div>
+						) : (
+							<p className="text-sm leading-relaxed text-muted-foreground">
+								{(profile as any).bio || "No bio added yet"}
+							</p>
+						)}
+					</div>
+
+					{/* Tags */}
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+							Tags
+						</label>
+						{editing ? (
+							<div>
+								<Input
+									value={form.tags.join(", ")}
+									onChange={(e) =>
+										setForm((f) => ({
+											...f,
+											tags: e.target.value.split(",").map((t) => t.trim()),
+										}))
+									}
+									placeholder="AI, Web3, DeFi, etc."
+									className="border-border/40"
+								/>
+								<p className="mt-1 text-xs text-muted-foreground">
+									Separate tags with commas
+								</p>
+							</div>
+						) : (
+							<div className="flex flex-wrap gap-2">
+								{((profile as any).tags || []).length > 0 ? (
+									((profile as any).tags || []).map(
+										(tag: string, idx: number) => (
+											<Badge
+												key={idx}
+												variant="outline"
+												className="border-border/40 text-xs"
+											>
+												{tag}
+											</Badge>
+										),
+									)
+								) : (
+									<p className="text-sm text-muted-foreground">
+										No tags added yet
+									</p>
+								)}
+							</div>
+						)}
+					</div>
+
+					{/* Interests */}
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+							Interests
+						</label>
+						{editing ? (
+							<div>
+								<Input
+									value={form.interests.join(", ")}
+									onChange={(e) =>
+										setForm((f) => ({
+											...f,
+											interests: e.target.value.split(",").map((i) => i.trim()),
+										}))
+									}
+									placeholder="Machine Learning, NFTs, Gaming, etc."
+									className="border-border/40"
+								/>
+								<p className="mt-1 text-xs text-muted-foreground">
+									Separate interests with commas
+								</p>
+							</div>
+						) : (
+							<div className="flex flex-wrap gap-2">
+								{((profile as any).interests || []).length > 0 ? (
+									((profile as any).interests || []).map(
+										(interest: string, idx: number) => (
+											<Badge
+												key={idx}
+												variant="outline"
+												className="border-border/40 text-xs"
+											>
+												{interest}
+											</Badge>
+										),
+									)
+								) : (
+									<p className="text-sm text-muted-foreground">
+										No interests added yet
+									</p>
+								)}
+							</div>
+						)}
+					</div>
+
+					{/* Specialties */}
+					<div className="space-y-1.5">
+						<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+							Specialties
+						</label>
+						{editing ? (
+							<div>
+								<Input
+									value={form.specialties.join(", ")}
+									onChange={(e) =>
+										setForm((f) => ({
+											...f,
+											specialties: e.target.value
+												.split(",")
+												.map((s) => s.trim()),
+										}))
+									}
+									placeholder="Smart Contracts, UI Design, Technical Writing, etc."
+									className="border-border/40"
+								/>
+								<p className="mt-1 text-xs text-muted-foreground">
+									Separate specialties with commas
+								</p>
+							</div>
+						) : (
+							<div className="flex flex-wrap gap-2">
+								{((profile as any).specialties || []).length > 0 ? (
+									((profile as any).specialties || []).map(
+										(specialty: string, idx: number) => (
+											<Badge
+												key={idx}
+												variant="outline"
+												className="border-border/40 text-xs"
+											>
+												{specialty}
+											</Badge>
+										),
+									)
+								) : (
+									<p className="text-sm text-muted-foreground">
+										No specialties added yet
+									</p>
+								)}
+							</div>
+						)}
+					</div>
+				</CardContent>
+			</Card>
+
+			{/* Agentic Context Preferences */}
+			<Card className="border-border/40">
+				<CardHeader className="pb-2">
+					<CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+						Agentic Context Preferences
+					</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					{/* Opt-in toggle */}
+					<div className="flex items-center justify-between gap-4">
+						<div className="flex-1">
+							<label className="text-sm font-medium">
+								Enable Context-Aware Agent
+							</label>
+							<p className="text-xs text-muted-foreground mt-0.5">
+								Allow agent to use your profile, posts, and news for
+								personalized responses
+							</p>
+						</div>
+						{editing ? (
+							<Switch
+								checked={form.agentic_context_opt_in}
+								onCheckedChange={(checked) =>
+									setForm((f) => ({ ...f, agentic_context_opt_in: checked }))
+								}
+							/>
+						) : (
+							<Badge
+								variant={
+									(profile as any).agentic_context_opt_in
+										? "default"
+										: "outline"
+								}
+								className="text-xs"
+							>
+								{(profile as any).agentic_context_opt_in
+									? "Enabled"
+									: "Disabled"}
+							</Badge>
+						)}
+					</div>
+
+					{/* News preferences (conditionally shown) */}
+					{(editing
+						? form.agentic_context_opt_in
+						: (profile as any).agentic_context_opt_in) && (
+						<>
+							<div className="flex items-center justify-between gap-4 pt-2 border-t border-border/40">
+								<div className="flex-1">
+									<label className="text-sm font-medium">
+										Enable News Digests
+									</label>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Receive curated news based on your interests
+									</p>
+								</div>
+								{editing ? (
+									<Switch
+										checked={form.news_enabled}
+										onCheckedChange={(checked) =>
+											setForm((f) => ({ ...f, news_enabled: checked }))
+										}
+									/>
+								) : (
+									<Badge
+										variant={
+											(profile as any).news_enabled ? "default" : "outline"
+										}
+										className="text-xs"
+									>
+										{(profile as any).news_enabled ? "Enabled" : "Disabled"}
+									</Badge>
+								)}
+							</div>
+
+							{(editing
+								? form.news_enabled
+								: (profile as any).news_enabled) && (
+								<>
+									{/* News Topics */}
+									<div className="space-y-1.5">
+										<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+											News Topics
+										</label>
+										{editing ? (
+											<div>
+												<Input
+													value={form.news_topics.join(", ")}
+													onChange={(e) =>
+														setForm((f) => ({
+															...f,
+															news_topics: e.target.value
+																.split(",")
+																.map((t) => t.trim())
+																.filter((t) => t),
+														}))
+													}
+													placeholder="AI, Web3, DeFi, NFTs, Gaming, etc."
+													className="border-border/40"
+												/>
+												<p className="mt-1 text-xs text-muted-foreground">
+													Separate topics with commas
+												</p>
+											</div>
+										) : (
+											<div className="flex flex-wrap gap-2">
+												{((profile as any).news_topics || []).length > 0 ? (
+													((profile as any).news_topics || []).map(
+														(topic: string, idx: number) => (
+															<Badge
+																key={idx}
+																variant="outline"
+																className="border-border/40 text-xs"
+															>
+																{topic}
+															</Badge>
+														),
+													)
+												) : (
+													<p className="text-sm text-muted-foreground">
+														No topics selected
+													</p>
+												)}
+											</div>
+										)}
+									</div>
+
+									{/* Digest Cadence */}
+									<div className="space-y-1.5">
+										<label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+											Digest Cadence
+										</label>
+										{editing ? (
+											<Select
+												value={form.news_cadence}
+												onValueChange={(value: "hourly" | "daily" | "weekly") =>
+													setForm((f) => ({ ...f, news_cadence: value }))
+												}
+											>
+												<SelectTrigger className="border-border/40">
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="hourly">Hourly</SelectItem>
+													<SelectItem value="daily">Daily</SelectItem>
+													<SelectItem value="weekly">Weekly</SelectItem>
+												</SelectContent>
+											</Select>
+										) : (
+											<p className="text-sm text-muted-foreground capitalize">
+												{(profile as any).news_cadence || "daily"}
+											</p>
+										)}
+									</div>
+								</>
+							)}
+						</>
 					)}
 				</CardContent>
 			</Card>
