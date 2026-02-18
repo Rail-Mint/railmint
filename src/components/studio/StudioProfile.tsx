@@ -4,10 +4,10 @@ import {
 	Edit3,
 	Loader2,
 	Save,
-	Twitter,
 	User,
 	X,
 } from "lucide-react";
+import { XIcon } from "@/components/ui/x-icon";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { Badge } from "@/components/ui/badge";
@@ -493,7 +493,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 							{verifyingX ? (
 								<Loader2 className="mr-2 h-4 w-4 animate-spin" />
 							) : (
-								<Twitter className="mr-2 h-4 w-4" />
+								<XIcon className="mr-2 h-4 w-4" />
 							)}
 							{verifyingX ? "Verifying..." : "Verify with X"}
 						</Button>
