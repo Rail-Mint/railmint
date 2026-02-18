@@ -237,7 +237,6 @@ Deno.serve(async (req: Request) => {
 			author_handle: authorHandle,
 			defer_processing: false,
 			reply_with_ai: true,
-			reply_via_twitterapi: true,
 			reply_to_id: mentionId,
 			payload: {
 				source: "twitterapi_webhook",

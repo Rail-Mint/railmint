@@ -265,21 +265,11 @@ Deno.serve(async (req: Request) => {
 
 	try {
 		const body = await req.json().catch(() => ({}));
-		console.log(
-			"[sync-x-mentions] DEBUG: entered try block, body:",
-			JSON.stringify(body),
-		);
 
 		const tweetioApiKey = Deno.env.get("TWEETIO_API_KEY");
 		const tweetioBaseUrl =
 			Deno.env.get("TWEETIO_BASE_URL") || "https://api.twitterapi.io";
 		const xAgentUserName = Deno.env.get("X_AGENT_USERNAME");
-		console.log(
-			"[sync-x-mentions] DEBUG: env check — TWEETIO_API_KEY:",
-			tweetioApiKey ? "SET" : "MISSING",
-			"X_AGENT_USERNAME:",
-			xAgentUserName || "MISSING",
-		);
 		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 		const supabaseUrl = Deno.env.get("SUPABASE_URL");
 		const processMentionUrl =
@@ -298,7 +288,8 @@ Deno.serve(async (req: Request) => {
 
 		const uploadPostApiKey = Deno.env.get("UPLOAD_POST_API_KEY");
 		const uploadPostUser = Deno.env.get("UPLOAD_POST_USER");
-		const queueOnly = body?.queueOnly !== false;
+		const queueOnly =
+			typeof body?.queueOnly === "boolean" ? body.queueOnly : false;
 		const ingestConcurrency = Number(
 			body?.ingestConcurrency ||
 				Deno.env.get("MENTION_INGEST_CONCURRENCY") ||
@@ -349,7 +340,6 @@ Deno.serve(async (req: Request) => {
 					author_handle: authorHandle,
 					defer_processing: queueOnly,
 					reply_with_ai: !queueOnly,
-					reply_via_twitterapi: !queueOnly,
 					reply_to_id: mentionId,
 					payload: {
 						source: "tweetio",
