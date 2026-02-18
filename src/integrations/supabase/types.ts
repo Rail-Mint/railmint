@@ -1,4 +1,3 @@
-Connecting to db 5432
 export type Json =
   | string
   | number
@@ -8,276 +7,21 @@ export type Json =
   | Json[]
 
 export type Database = {
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.1"
   }
   public: {
     Tables: {
-      creator_conversation_summaries: {
-        Row: {
-          conversation_count: number
-          created_at: string
-          creator_id: string
-          earliest_timestamp: string
-          id: string
-          latest_timestamp: string
-          summary_text: string
-          token_count: number
-          updated_at: string
-        }
-        Insert: {
-          conversation_count?: number
-          created_at?: string
-          creator_id: string
-          earliest_timestamp: string
-          id?: string
-          latest_timestamp: string
-          summary_text: string
-          token_count?: number
-          updated_at?: string
-        }
-        Update: {
-          conversation_count?: number
-          created_at?: string
-          creator_id?: string
-          earliest_timestamp?: string
-          id?: string
-          latest_timestamp?: string
-          summary_text?: string
-          token_count?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "creator_conversation_summaries_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: true
-            referencedRelation: "creators"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      creator_embeddings: {
-        Row: {
-          created_at: string
-          creator_id: string
-          embedding: string
-          id: string
-          metadata: Json | null
-          source_id: string
-          source_type: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          creator_id: string
-          embedding: string
-          id?: string
-          metadata?: Json | null
-          source_id: string
-          source_type: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          creator_id?: string
-          embedding?: string
-          id?: string
-          metadata?: Json | null
-          source_id?: string
-          source_type?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "creator_embeddings_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "creators"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      creator_news_digests: {
-        Row: {
-          cadence: string
-          created_at: string
-          creator_id: string
-          digest_bullets: Json
-          id: string
-          last_fetched_at: string | null
-          topic: string
-          updated_at: string
-        }
-        Insert: {
-          cadence: string
-          created_at?: string
-          creator_id: string
-          digest_bullets?: Json
-          id?: string
-          last_fetched_at?: string | null
-          topic: string
-          updated_at?: string
-        }
-        Update: {
-          cadence?: string
-          created_at?: string
-          creator_id?: string
-          digest_bullets?: Json
-          id?: string
-          last_fetched_at?: string | null
-          topic?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "creator_news_digests_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "creators"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      creator_post_index: {
-        Row: {
-          created_at: string
-          creator_id: string
-          id: string
-          like_count: number
-          post_content: string
-          post_id: string
-          post_timestamp: string
-          tags: string[] | null
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          creator_id: string
-          id?: string
-          like_count?: number
-          post_content: string
-          post_id: string
-          post_timestamp: string
-          tags?: string[] | null
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          creator_id?: string
-          id?: string
-          like_count?: number
-          post_content?: string
-          post_id?: string
-          post_timestamp?: string
-          tags?: string[] | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "creator_post_index_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "creators"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "creator_post_index_post_id_fkey"
-            columns: ["post_id"]
-            isOneToOne: false
-            referencedRelation: "posts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      creator_profiles: {
-        Row: {
-          bio: string | null
-          context_opt_in: boolean
-          created_at: string
-          creator_id: string
-          id: string
-          interests: string[] | null
-          news_cadence: string | null
-          news_enabled: boolean
-          news_topics: string[] | null
-          specialties: string[] | null
-          tags: string[] | null
-          updated_at: string
-        }
-        Insert: {
-          bio?: string | null
-          context_opt_in?: boolean
-          created_at?: string
-          creator_id: string
-          id?: string
-          interests?: string[] | null
-          news_cadence?: string | null
-          news_enabled?: boolean
-          news_topics?: string[] | null
-          specialties?: string[] | null
-          tags?: string[] | null
-          updated_at?: string
-        }
-        Update: {
-          bio?: string | null
-          context_opt_in?: boolean
-          created_at?: string
-          creator_id?: string
-          id?: string
-          interests?: string[] | null
-          news_cadence?: string | null
-          news_enabled?: boolean
-          news_topics?: string[] | null
-          specialties?: string[] | null
-          tags?: string[] | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "creator_profiles_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: true
-            referencedRelation: "creators"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       creators: {
         Row: {
-          agentic_context_opt_in: boolean
           clone_name: string
           created_at: string
-          focus_id: string | null
-          goal_id: string | null
           id: string
           is_active: boolean
           persona_text: string
           prompt_template: string
-          selected_pack: string | null
-          tone_id: string | null
           updated_at: string
           wallet_address: string
           x_handle: string | null
@@ -285,17 +29,12 @@ export type Database = {
           x_verified_at: string | null
         }
         Insert: {
-          agentic_context_opt_in?: boolean
           clone_name: string
           created_at?: string
-          focus_id?: string | null
-          goal_id?: string | null
           id?: string
           is_active?: boolean
           persona_text: string
           prompt_template: string
-          selected_pack?: string | null
-          tone_id?: string | null
           updated_at?: string
           wallet_address: string
           x_handle?: string | null
@@ -303,17 +42,12 @@ export type Database = {
           x_verified_at?: string | null
         }
         Update: {
-          agentic_context_opt_in?: boolean
           clone_name?: string
           created_at?: string
-          focus_id?: string | null
-          goal_id?: string | null
           id?: string
           is_active?: boolean
           persona_text?: string
           prompt_template?: string
-          selected_pack?: string | null
-          tone_id?: string | null
           updated_at?: string
           wallet_address?: string
           x_handle?: string | null
@@ -328,8 +62,8 @@ export type Database = {
           donation_id: string | null
           error_text: string | null
           event_type: string
-          id: number
-          metadata: Json
+          id: string
+          metadata: Json | null
           tx_hash: string | null
         }
         Insert: {
@@ -337,8 +71,8 @@ export type Database = {
           donation_id?: string | null
           error_text?: string | null
           event_type: string
-          id?: number
-          metadata?: Json
+          id?: string
+          metadata?: Json | null
           tx_hash?: string | null
         }
         Update: {
@@ -346,8 +80,8 @@ export type Database = {
           donation_id?: string | null
           error_text?: string | null
           event_type?: string
-          id?: number
-          metadata?: Json
+          id?: string
+          metadata?: Json | null
           tx_hash?: string | null
         }
         Relationships: [
@@ -374,7 +108,6 @@ export type Database = {
           recipient_wallet: string
           status: string
           tx_hash: string | null
-          updated_at: string
         }
         Insert: {
           amount: number
@@ -389,7 +122,6 @@ export type Database = {
           recipient_wallet: string
           status?: string
           tx_hash?: string | null
-          updated_at?: string
         }
         Update: {
           amount?: number
@@ -404,7 +136,6 @@ export type Database = {
           recipient_wallet?: string
           status?: string
           tx_hash?: string | null
-          updated_at?: string
         }
         Relationships: [
           {
@@ -425,35 +156,26 @@ export type Database = {
       }
       epoch_rewards: {
         Row: {
-          composite_score: number
           creator_id: string
           epoch_id: number
           id: string
           like_count: number
-          moderation_score: number
-          quality_score: number
           rank: number
           reward_amount: number
         }
         Insert: {
-          composite_score?: number
           creator_id: string
           epoch_id: number
           id?: string
           like_count: number
-          moderation_score?: number
-          quality_score?: number
           rank: number
           reward_amount: number
         }
         Update: {
-          composite_score?: number
           creator_id?: string
           epoch_id?: number
           id?: string
           like_count?: number
-          moderation_score?: number
-          quality_score?: number
           rank?: number
           reward_amount?: number
         }
@@ -544,7 +266,7 @@ export type Database = {
           last_attempt_at: string | null
           mention_id: string
           parsed_intent: string
-          payload: Json
+          payload: Json | null
           platform: string
           processed_at: string | null
           raw_text: string
@@ -560,7 +282,7 @@ export type Database = {
           last_attempt_at?: string | null
           mention_id: string
           parsed_intent?: string
-          payload?: Json
+          payload?: Json | null
           platform?: string
           processed_at?: string | null
           raw_text: string
@@ -576,7 +298,7 @@ export type Database = {
           last_attempt_at?: string | null
           mention_id?: string
           parsed_intent?: string
-          payload?: Json
+          payload?: Json | null
           platform?: string
           processed_at?: string | null
           raw_text?: string
@@ -587,72 +309,42 @@ export type Database = {
       posts: {
         Row: {
           commit_tx_hash: string | null
-          composite_score: number
           content_hash: string
-          content_html: string | null
-          content_tags: string[]
           content_text: string
           created_at: string
           creator_id: string
-          engagement_score: number
           epoch_id: number
           id: string
           is_fallback: boolean
           meta_hash: string
-          moderation_score: number
           prompt_hash: string
           prompt_text: string
-          quality_flags: Json
-          quality_score: number
-          risk_level: string
-          source_platform: string
-          source_reference: string | null
         }
         Insert: {
           commit_tx_hash?: string | null
-          composite_score?: number
           content_hash: string
-          content_html?: string | null
-          content_tags?: string[]
           content_text: string
           created_at?: string
           creator_id: string
-          engagement_score?: number
           epoch_id: number
           id?: string
           is_fallback?: boolean
           meta_hash: string
-          moderation_score?: number
           prompt_hash: string
           prompt_text: string
-          quality_flags?: Json
-          quality_score?: number
-          risk_level?: string
-          source_platform?: string
-          source_reference?: string | null
         }
         Update: {
           commit_tx_hash?: string | null
-          composite_score?: number
           content_hash?: string
-          content_html?: string | null
-          content_tags?: string[]
           content_text?: string
           created_at?: string
           creator_id?: string
-          engagement_score?: number
           epoch_id?: number
           id?: string
           is_fallback?: boolean
           meta_hash?: string
-          moderation_score?: number
           prompt_hash?: string
           prompt_text?: string
-          quality_flags?: Json
-          quality_score?: number
-          risk_level?: string
-          source_platform?: string
-          source_reference?: string | null
         }
         Relationships: [
           {
@@ -715,17 +407,14 @@ export type Database = {
       }
       webhook_nonces: {
         Row: {
-          created_at: string
           expires_at: string
           nonce: string
         }
         Insert: {
-          created_at?: string
           expires_at: string
           nonce: string
         }
         Update: {
-          created_at?: string
           expires_at?: string
           nonce?: string
         }
@@ -742,23 +431,6 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
-      }
-      match_creator_embeddings: {
-        Args: {
-          cutoff_date: string
-          match_count: number
-          match_creator_id: string
-          match_threshold: number
-          query_embedding: string
-        }
-        Returns: {
-          created_at: string
-          creator_id: string
-          id: string
-          similarity: number
-          source_id: string
-          source_type: string
-        }[]
       }
     }
     Enums: {
@@ -888,13 +560,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       app_role: ["admin", "user"],
     },
   },
 } as const
-
