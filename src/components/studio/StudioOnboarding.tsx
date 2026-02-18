@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, Loader2, Sparkles, Twitter } from "lucide-react";
+import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import { XIcon } from "@/components/ui/x-icon";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { keccak256, toHex } from "viem";
@@ -505,7 +506,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
                     {verifyingX ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Twitter className="h-4 w-4" />
+                      <XIcon className="h-4 w-4" />
                     )}
                     {verifyingX ? "Verifying..." : "Verify with X"}
                   </Button>

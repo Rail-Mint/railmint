@@ -1,7 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
-import { Bot, CheckCircle2, Sparkles, Wand2, X, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Bot, CheckCircle2, Loader2, Sparkles, Wand2, X, Zap } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { keccak256, toHex } from "viem";
@@ -34,12 +34,10 @@ import { useToast } from "@/hooks/use-toast";
 import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { useContractStatus } from "@/hooks/useContractStatus";
 import { supabase } from "@/integrations/supabase/client";
+import { buildXOAuthUrl } from "@/lib/x-oauth";
+
 
 const schema = z.object({
-	x_handle: z
-		.string()
-		.min(1, "X handle is required")
-		.regex(/^@?[\w]+$/, "Invalid handle"),
 	clone_name: z.string().min(2, "Clone name must be at least 2 characters"),
 	persona_text: z
 		.string()
@@ -50,7 +48,7 @@ const schema = z.object({
 });
 
 type FormValues = z.infer<typeof schema>;
-type OnboardingStep = 1 | 2 | 3 | 4 | 5;
+type OnboardingStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 const ONBOARDING_ANALYTICS_KEY = "railmindai.onboarding.analytics.v1";
 
@@ -234,15 +232,18 @@ export default function Onboarding() {
 	const [awaitingWallet, setAwaitingWallet] = useState(false);
 	const [showCustomStyleForm, setShowCustomStyleForm] = useState(false);
 	const [web3TxHash, setWeb3TxHash] = useState<string | undefined>(undefined);
+	const [verifyingX, setVerifyingX] = useState(false);
+	const [xVerified, setXVerified] = useState(false);
 
 	const viewedStepRef = useRef<Set<AnalyticsStep>>(new Set());
 	const currentStepRef = useRef<OnboardingStep>(1);
 	const completedRef = useRef(false);
+	const popupRef = useRef<Window | null>(null);
+	const oauthHandledRef = useRef(false);
 
 	const form = useForm<FormValues>({
 		resolver: zodResolver(schema),
 		defaultValues: {
-			x_handle: "",
 			clone_name: "",
 			persona_text: "",
 			prompt_template: "",
@@ -312,11 +313,12 @@ export default function Onboarding() {
 	}, [customStarterPacks]);
 
 	const progressMap: Record<OnboardingStep, number> = {
-		1: 25,
-		2: 50,
-		3: 75,
-		4: 90,
-		5: 100,
+		1: 20,
+		2: 40,
+		3: 60,
+		4: 80,
+		5: 95,
+		6: 100,
 	};
 	const progressValue = progressMap[step];
 	const progressCheckpoints = [
@@ -324,6 +326,7 @@ export default function Onboarding() {
 		{ id: 2, label: "Voice" },
 		{ id: 3, label: "Review" },
 		{ id: 4, label: "Login" },
+		{ id: 5, label: "Verify X" },
 	] as const;
 	const activePackLabel =
 		allStarterPacks.find((pack) => pack.id === selectedPack)?.label ??
@@ -566,7 +569,7 @@ export default function Onboarding() {
 
 	async function moveNext() {
 		if (step === 1) {
-			const valid = await form.trigger(["x_handle", "clone_name"]);
+		const valid = await form.trigger(["clone_name"]);
 			if (!valid) return;
 			setStep(2);
 			return;
@@ -581,7 +584,7 @@ export default function Onboarding() {
 
 	function moveBack() {
 		if (step <= 1) return;
-		if (step === 5) {
+		if (step === 5 || step === 6) {
 			setStep(3);
 			return;
 		}
@@ -606,9 +609,6 @@ export default function Onboarding() {
 		setLoading(true);
 		try {
 			setAwaitingWallet(false);
-			const handle = values.x_handle.startsWith("@")
-				? values.x_handle
-				: `@${values.x_handle}`;
 
 			// Generate profile hash from creator data
 			const profileData = JSON.stringify({
@@ -621,7 +621,7 @@ export default function Onboarding() {
 			// Attempt Web3 registration only if contracts are deployed
 			if (contractsDeployed) {
 				try {
-					await registerCreator(handle, profileHash);
+					await registerCreator("", profileHash);
 					toast({
 						title: "Transaction pending",
 						description: "Please confirm the transaction in your wallet...",
@@ -643,7 +643,7 @@ export default function Onboarding() {
 
 			// Always save to Supabase as fallback/backup
 			const data = await invokeWithSignature("upsert-creator", {
-				x_handle: handle,
+				x_handle: null,
 				clone_name: values.clone_name,
 				persona_text: values.persona_text,
 				prompt_template: values.prompt_template,
@@ -658,12 +658,11 @@ export default function Onboarding() {
 				completed: current.completed + 1,
 			}));
 
+			// Advance to X verification step
 			setStep(5);
 			toast({
-				title: "Clone created",
-				description: web3TxHash
-					? `Your AI clone is ready. Transaction: ${web3TxHash.slice(0, 10)}...`
-					: "Your AI clone is ready to generate content.",
+				title: "Clone created!",
+				description: "Now link your X account to verify ownership.",
 			});
 		} catch (error: unknown) {
 			const description =
@@ -685,6 +684,109 @@ export default function Onboarding() {
 			void handleSave();
 		}
 	}, [awaitingWallet, isConnected, loading]);
+
+	// X OAuth verify handler (used on step 5)
+	const handleVerifyX = useCallback(async () => {
+		if (!address) return;
+		setVerifyingX(true);
+		try {
+			const redirectUri = "https://railmint.lovable.app/studio/profile";
+			const authUrl = await buildXOAuthUrl(redirectUri);
+			const width = 500, height = 660;
+			const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+			const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+			const popup = window.open(authUrl, "x_oauth", `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=no,status=no`);
+			if (!popup) {
+				toast({ title: "Popup blocked", description: "Please allow popups for this site.", variant: "destructive" });
+				setVerifyingX(false);
+				return;
+			}
+			popupRef.current = popup;
+		} catch (err: any) {
+			toast({ title: "Verification failed", description: err.message || "Could not start X verification", variant: "destructive" });
+			setVerifyingX(false);
+		}
+	}, [address, toast]);
+
+	// Listen for OAuth result from the popup
+	useEffect(() => {
+		if (step !== 5) return;
+
+		const handleOAuthMessage = async (message: { type: string; code?: string; state?: string; error?: string }) => {
+			if (!message.type?.startsWith("x-oauth")) return;
+			if (oauthHandledRef.current) return;
+			oauthHandledRef.current = true;
+
+			popupRef.current?.close();
+			popupRef.current = null;
+
+			if (message.type === "x-oauth-error") {
+				toast({ title: "Verification failed", description: message.error || "X OAuth error", variant: "destructive" });
+				setVerifyingX(false);
+				return;
+			}
+
+			if (message.type === "x-oauth-complete") {
+				const { code, state } = message;
+				const savedState = localStorage.getItem("x_oauth_state");
+				if (state !== savedState) {
+					toast({ title: "Verification failed", description: "Invalid OAuth state", variant: "destructive" });
+					setVerifyingX(false);
+					return;
+				}
+				const codeVerifier = localStorage.getItem("x_oauth_verifier");
+				if (!codeVerifier) {
+					toast({ title: "Verification failed", description: "Missing PKCE verifier", variant: "destructive" });
+					setVerifyingX(false);
+					return;
+				}
+				localStorage.removeItem("x_oauth_state");
+				localStorage.removeItem("x_oauth_verifier");
+
+				try {
+					await invokeWithSignature("x-verify", {
+						code,
+						code_verifier: codeVerifier,
+						redirect_uri: "https://railmint.lovable.app/studio/profile",
+					}, address!);
+					setXVerified(true);
+					toast({ title: "X account verified!", description: "Your X account is now linked." });
+					setStep(6);
+				} catch (err: any) {
+					toast({ title: "Verification failed", description: err.message || "Could not verify X account", variant: "destructive" });
+				} finally {
+					setVerifyingX(false);
+				}
+			}
+		};
+
+		const postMessageHandler = (event: MessageEvent) => {
+			if (event.origin !== window.location.origin) return;
+			handleOAuthMessage(event.data);
+		};
+		window.addEventListener("message", postMessageHandler);
+
+		let bc: BroadcastChannel | null = null;
+		try {
+			bc = new BroadcastChannel("x_oauth_channel");
+			bc.onmessage = (event) => handleOAuthMessage(event.data);
+		} catch {}
+
+		const pollInterval = setInterval(() => {
+			const raw = localStorage.getItem("x_oauth_result");
+			if (raw) {
+				localStorage.removeItem("x_oauth_result");
+				try { handleOAuthMessage(JSON.parse(raw)); } catch {}
+			}
+		}, 500);
+
+		return () => {
+			window.removeEventListener("message", postMessageHandler);
+			bc?.close();
+			clearInterval(pollInterval);
+		};
+	}, [step, address, invokeWithSignature, toast]);
+
 
 	if (step === 4) {
 		return (
@@ -766,7 +868,42 @@ export default function Onboarding() {
 	if (step === 5) {
 		return (
 			<div className="container px-4 py-12 sm:py-16">
-				<div className="mx-auto max-w-4xl rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background/90 to-amber-50/30 p-6 text-center shadow-[0_25px_70px_-40px_rgba(245,158,11,0.7)] sm:p-8">
+				<div className="mx-auto max-w-4xl rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background/90 to-primary/5 p-6 text-center shadow-[0_25px_70px_-40px_rgba(245,158,11,0.75)] sm:p-8">
+					<p className="mb-2 inline-flex items-center gap-2 rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-primary">
+						<Sparkles className="h-3 w-3" /> Clone Created
+					</p>
+					<h1 className="mb-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+						Verify Your X Account
+					</h1>
+					<p className="mx-auto mb-6 max-w-2xl text-muted-foreground">
+						Connect your X account via OAuth to prove you own it.
+						This links your wallet to your real X identity and unlocks the full creator experience.
+					</p>
+					<div className="flex flex-col justify-center gap-3 sm:flex-row sm:items-center">
+						<Button onClick={handleVerifyX} disabled={verifyingX} className="gap-2 w-full sm:w-auto">
+							{verifyingX ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<XIcon className="h-4 w-4" />
+							)}
+							{verifyingX ? "Verifying..." : "Verify with X"}
+						</Button>
+						<Button variant="outline" onClick={() => setStep(6)} className="w-full sm:w-auto">
+							Skip for now →
+						</Button>
+					</div>
+					<p className="mt-4 text-xs text-muted-foreground">
+						You can also verify later from your Studio profile settings.
+					</p>
+				</div>
+			</div>
+		);
+	}
+
+	if (step === 6) {
+		return (
+			<div className="container px-4 py-12 sm:py-16">
+				<div className="mx-auto max-w-4xl rounded-3xl border border-primary/30 bg-gradient-to-br from-primary/10 via-background/90 to-primary/5 p-6 text-center shadow-[0_25px_70px_-40px_rgba(245,158,11,0.7)] sm:p-8">
 					<CheckCircle2 className="mx-auto mb-5 h-16 w-16 text-primary" />
 					<h1 className="mb-3 text-3xl font-semibold tracking-tight sm:text-4xl">
 						Clone Ready
@@ -774,26 +911,9 @@ export default function Onboarding() {
 					<p className="mx-auto mb-6 max-w-2xl text-muted-foreground">
 						Your clone <strong>{form.getValues("clone_name")}</strong> is active
 						and synced to <strong>{shortAddress}</strong>.
+						{xVerified && " X account verified ✓"}
 					</p>
-
-					{web3TxHash && (
-						<div className="mx-auto mb-4 max-w-2xl rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm">
-							<p className="font-semibold text-green-700">
-								✅ Registered on blockchain
-							</p>
-							<a
-								href={`https://testnet.bscscan.com/tx/${web3TxHash}`}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="mt-1 inline-block text-xs text-green-600 underline hover:text-green-700"
-							>
-								View transaction: {web3TxHash.slice(0, 10)}...
-								{web3TxHash.slice(-8)}
-							</a>
-						</div>
-					)}
-
-					<div className="mb-6 grid gap-2 rounded-2xl border border-border/70 bg-background/75 p-4 text-sm sm:grid-cols-3">
+					<div className="mb-6 grid gap-2 rounded-2xl border border-border/70 bg-background/80 p-4 text-sm sm:grid-cols-3">
 						<p>Profile saved</p>
 						<p>Voice preset applied</p>
 						<p>Studio unlocked</p>
@@ -801,13 +921,6 @@ export default function Onboarding() {
 					<div className="flex flex-col justify-center gap-3 sm:flex-row">
 						<Button asChild className="w-full sm:w-auto">
 							<Link to="/studio">Open Studio</Link>
-						</Button>
-						<Button
-							variant="outline"
-							onClick={() => setStep(1)}
-							className="w-full sm:w-auto"
-						>
-							Edit Setup
 						</Button>
 					</div>
 				</div>
@@ -940,26 +1053,7 @@ export default function Onboarding() {
 									</div>
 								</CardHeader>
 								<CardContent className="space-y-4">
-									<div className="grid gap-4 sm:grid-cols-2">
-										<FormField
-											control={form.control}
-											name="x_handle"
-											render={({ field }) => (
-												<FormItem>
-													<FormLabel className="flex items-center gap-2">
-														<XIcon className="h-4 w-4" />X Handle
-													</FormLabel>
-													<FormControl>
-														<Input
-															placeholder="@yourhandle"
-															className="h-10"
-															{...field}
-														/>
-													</FormControl>
-													<FormMessage />
-												</FormItem>
-											)}
-										/>
+								<div className="grid gap-4">
 										<FormField
 											control={form.control}
 											name="clone_name"
@@ -1490,15 +1584,9 @@ export default function Onboarding() {
 										</div>
 									)}
 
-									<div className="grid gap-2 rounded-xl border border-border/70 bg-background/70 p-3 sm:grid-cols-2">
+								<div className="grid gap-2 rounded-xl border border-border/70 bg-background/70 p-3">
 										<div>
-											<p className="text-xs text-muted-foreground">X Handle</p>
-											<p className="font-medium">{form.watch("x_handle")}</p>
-										</div>
-										<div>
-											<p className="text-xs text-muted-foreground">
-												Clone Name
-											</p>
+											<p className="text-xs text-muted-foreground">Clone Name</p>
 											<p className="font-medium">{form.watch("clone_name")}</p>
 										</div>
 									</div>
