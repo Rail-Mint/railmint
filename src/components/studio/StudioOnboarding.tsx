@@ -184,6 +184,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
       }, address);
 
       toast({ title: "Clone created!", description: `${values.clone_name} is ready.` });
+      onComplete();
       setStep(4);
     } catch (err: any) {
       const msg = (err.message || "").toLowerCase();
