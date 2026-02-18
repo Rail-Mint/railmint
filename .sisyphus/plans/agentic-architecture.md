@@ -940,7 +940,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-16-ui.txt
   ```
 
-- [ ] 17. CI workflow for Vitest + function tests
+- [x] 17. CI workflow for Vitest + function tests
 
   **What to do**:
   - Add CI workflow to run Vitest and function tests
@@ -980,7 +980,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-17-ci.txt
   ```
 
-- [ ] 18. Metrics/instrumentation validation (latency + token budgets)
+- [x] 18. Metrics/instrumentation validation (latency + token budgets)
 
   **What to do**:
   - Add structured logging for context pack tokens, retrieval latency, tool-call count
