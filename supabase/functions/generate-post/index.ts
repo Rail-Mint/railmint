@@ -150,7 +150,6 @@ Deno.serve(async (req: Request) => {
 
 		const creatorData = creator as any;
 
-		// Get current open epoch
 		const { data: epoch } = await supabase
 			.from("epochs")
 			.select("*")
@@ -159,8 +158,26 @@ Deno.serve(async (req: Request) => {
 			.limit(1)
 			.single();
 
-		if (!epoch) throw new Error("No open epoch found.");
-		const epochData = epoch as any;
+		let epochData = epoch as any;
+		if (!epochData) {
+			const now = new Date();
+			const endAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+			const { data: createdEpoch, error: createErr } = await supabase
+				.from("epochs")
+				.insert({
+					start_at: now.toISOString(),
+					end_at: endAt.toISOString(),
+					status: "open",
+					reward_pool: 0,
+				})
+				.select("*")
+				.single();
+
+			if (createErr || !createdEpoch) {
+				throw new Error("No open epoch found.");
+			}
+			epochData = createdEpoch as any;
+		}
 
 		// Resolve topic
 		const defaultTopics = [

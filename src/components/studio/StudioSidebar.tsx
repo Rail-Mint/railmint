@@ -1,20 +1,21 @@
-import { BrandMark } from "@/components/branding/BrandMark";
-import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import {
-    BarChart3,
-    ChevronLeft,
-    FileText,
-    Gift,
-    LayoutGrid,
-    Settings,
-    Shield,
-    Trophy,
-    UserCog,
-    WalletCards,
-    X,
+	BarChart3,
+	Bot,
+	ChevronLeft,
+	FileText,
+	Gift,
+	LayoutGrid,
+	Settings,
+	Shield,
+	Trophy,
+	UserCog,
+	WalletCards,
+	X,
 } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
+import { BrandMark } from "@/components/branding/BrandMark";
+import { Button } from "@/components/ui/button";
 
 type NavItem = {
 	key: string;
@@ -41,6 +42,12 @@ const navItems: NavItem[] = [
 		label: "Content",
 		description: "AI publishing",
 		icon: FileText,
+	},
+	{
+		key: "bot-tester",
+		label: "Bot Tester",
+		description: "Test your clone",
+		icon: Bot,
 	},
 	{
 		key: "analytics",

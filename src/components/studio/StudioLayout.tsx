@@ -9,6 +9,7 @@ const sectionTitles: Record<string, string> = {
 	overview: "Overview",
 	profile: "Profile",
 	content: "Content",
+	"bot-tester": "Bot Tester",
 	analytics: "Analytics",
 	leaderboard: "Leaderboard",
 	rewards: "Rewards",

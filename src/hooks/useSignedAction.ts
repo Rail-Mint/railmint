@@ -1,45 +1,91 @@
 import { useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { supabase } from "@/integrations/supabase/client";
-
-/**
- * Hook that signs a message with the connected wallet before invoking an edge function.
- * This proves wallet ownership server-side, preventing impersonation.
- */
 export function useSignedAction() {
-  const { address } = useAccount();
-  const { signMessageAsync } = useSignMessage();
+	const { address } = useAccount();
+	const { signMessageAsync } = useSignMessage();
 
-  const invokeWithSignature = useCallback(
-    async (
-      functionName: string,
-      body: Record<string, unknown>,
-      walletAddress?: string,
-    ) => {
-      const wallet = walletAddress || address;
-      if (!wallet) throw new Error("Wallet not connected");
+	const getCachedSignature = useCallback(
+		(functionName: string, wallet: string) => {
+			try {
+				const raw = window.localStorage.getItem(
+					`rail-signed-action:${functionName}:${wallet}`,
+				);
+				if (!raw) return null;
+				const parsed = JSON.parse(raw) as {
+					signature: string;
+					timestamp: number;
+				};
+				if (!parsed?.signature || !parsed?.timestamp) return null;
+				if (Date.now() - parsed.timestamp > 270_000) return null;
+				return parsed;
+			} catch {
+				return null;
+			}
+		},
+		[],
+	);
 
-      const timestamp = Date.now();
-      const message = `RailMintAI Action\nFunction: ${functionName}\nWallet: ${wallet}\nTimestamp: ${timestamp}`;
+	const setCachedSignature = useCallback(
+		(
+			functionName: string,
+			wallet: string,
+			signature: string,
+			timestamp: number,
+		) => {
+			try {
+				window.localStorage.setItem(
+					`rail-signed-action:${functionName}:${wallet}`,
+					JSON.stringify({ signature, timestamp }),
+				);
+			} catch {
+				return;
+			}
+		},
+		[],
+	);
 
-      const signature = await signMessageAsync({ message, account: wallet as `0x${string}` });
+	const invokeWithSignature = useCallback(
+		async (
+			functionName: string,
+			body: Record<string, unknown>,
+			walletAddress?: string,
+		) => {
+			const wallet = walletAddress || address;
+			if (!wallet) throw new Error("Wallet not connected");
 
-      const { data, error } = await supabase.functions.invoke(functionName, {
-        body: {
-          ...body,
-          wallet_address: wallet,
-          signature,
-          sign_timestamp: timestamp,
-        },
-      });
+			const cached = getCachedSignature(functionName, wallet);
+			let signature: string;
+			let timestamp: number;
+			if (cached) {
+				signature = cached.signature;
+				timestamp = cached.timestamp;
+			} else {
+				timestamp = Date.now();
+				const message = `RailMintAI Action\nFunction: ${functionName}\nWallet: ${wallet}\nTimestamp: ${timestamp}`;
+				signature = await signMessageAsync({
+					message,
+					account: wallet as `0x${string}`,
+				});
+				setCachedSignature(functionName, wallet, signature, timestamp);
+			}
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+			const { data, error } = await supabase.functions.invoke(functionName, {
+				body: {
+					...body,
+					wallet_address: wallet,
+					signature,
+					sign_timestamp: timestamp,
+				},
+			});
 
-      return data;
-    },
-    [signMessageAsync, address],
-  );
+			if (error) throw error;
+			if (data?.error) throw new Error(data.error);
 
-  return { invokeWithSignature };
+			return data;
+		},
+		[address, getCachedSignature, setCachedSignature, signMessageAsync],
+	);
+
+	return { invokeWithSignature };
 }
