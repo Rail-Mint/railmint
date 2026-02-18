@@ -6,6 +6,20 @@ import {
 	Wallet,
 } from "https://esm.sh/ethers@6.13.4";
 import { keccak256, toBytes } from "https://esm.sh/viem@2.21.0";
+import { z } from "https://esm.sh/zod@4.3.6";
+import type {
+	InputGuardrail,
+	OutputGuardrail,
+} from "npm:@openai/agents@0.4.11";
+import {
+	Agent,
+	extractAllTextOutput,
+	OpenAIChatCompletionsModel,
+	run,
+	setTracingDisabled,
+	tool,
+} from "npm:@openai/agents@0.4.11";
+import type { ModelProvider } from "npm:@openai/agents-core@0.4.11";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -43,6 +57,42 @@ type ReplyTarget = {
 	intent: MentionIntent;
 	mentionUrl?: string | null;
 	contextSummary?: string | null;
+};
+
+type OpenRouterMessage = {
+	role: "system" | "user" | "assistant" | "tool";
+	content?: string | null;
+	name?: string;
+	tool_call_id?: string;
+	tool_calls?: unknown;
+};
+
+type OpenRouterChatRequest = {
+	model: string;
+	messages: OpenRouterMessage[];
+	tools?: unknown;
+	tool_choice?: unknown;
+	response_format?: unknown;
+	temperature?: number;
+	max_tokens?: number;
+	stop?: string[];
+};
+
+type OpenRouterChatResponse = {
+	choices: Array<{
+		index?: number;
+		message: {
+			role: string;
+			content?: string | null;
+			tool_calls?: unknown;
+		};
+		finish_reason?: string | null;
+	}>;
+	usage?: {
+		prompt_tokens?: number;
+		completion_tokens?: number;
+		total_tokens?: number;
+	};
 };
 
 function normalizeHandle(value?: string | null): string | null {
@@ -578,39 +628,619 @@ async function buildPersonalizedReply(params: {
 	}
 }
 
-async function replyViaTweetApi(params: { text: string; replyToId: string }) {
-	const apiKey = Deno.env.get("TWEETIO_API_KEY");
-	const apiBase =
-		Deno.env.get("TWEETIO_BASE_URL") || "https://api.twitterapi.io";
-	const loginCookies = Deno.env.get("TWITTERAPI_LOGIN_COOKIES");
-	const proxy = Deno.env.get("TWITTERAPI_PROXY");
+async function replyViaUploadPost(params: { text: string; replyToId: string }) {
+	const apiKey = Deno.env.get("UPLOAD_POST_API_KEY");
+	const user = Deno.env.get("UPLOAD_POST_USER");
 
-	if (!apiKey) throw new Error("Missing TWEETIO_API_KEY");
-	if (!loginCookies) throw new Error("Missing TWITTERAPI_LOGIN_COOKIES");
-	if (!proxy) throw new Error("Missing TWITTERAPI_PROXY");
+	if (!apiKey) throw new Error("Missing UPLOAD_POST_API_KEY");
+	if (!user) throw new Error("Missing UPLOAD_POST_USER");
 
-	const response = await fetch(`${apiBase}/twitter/create_tweet_v2`, {
+	const body = new URLSearchParams();
+	body.set("user", user);
+	body.set("platform[]", "x");
+	body.set("title", limitReplyText(params.text));
+	body.set("reply_to_id", params.replyToId);
+	body.set("async_upload", "false");
+
+	console.info("Upload-Post reply request", {
+		user,
+		reply_to_id: params.replyToId,
+		text_length: params.text.length,
+	});
+
+	const response = await fetch("https://api.upload-post.com/api/upload_text", {
 		method: "POST",
 		headers: {
-			"X-API-Key": apiKey,
-			"Content-Type": "application/json",
+			Authorization: `Apikey ${apiKey}`,
+			"Content-Type": "application/x-www-form-urlencoded",
 		},
-		body: JSON.stringify({
-			login_cookies: loginCookies,
-			tweet_text: limitReplyText(params.text),
-			proxy,
-			reply_to_tweet_id: params.replyToId,
-		}),
+		body: body.toString(),
 	});
 
 	const payload = await response.json().catch(() => ({}));
 	if (!response.ok) {
 		throw new Error(
-			`twitterapi.io reply failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`,
+			`Upload-Post reply failed: ${response.status} ${JSON.stringify(payload).slice(0, 200)}`,
 		);
 	}
 
+	console.info("Upload-Post reply success", {
+		status: response.status,
+		response_keys:
+			payload && typeof payload === "object"
+				? Object.keys(payload as Record<string, unknown>)
+				: [],
+	});
+
 	return payload as Record<string, unknown>;
+}
+
+setTracingDisabled(true);
+
+function isAffirmative(text: string): boolean {
+	const normalized = text.trim().toLowerCase();
+	return /^(yes|yep|yeah|y|ok|sure|confirm|do it|go ahead|approved?|lgtm|publish it)\b/.test(
+		normalized,
+	);
+}
+
+/** Scope keywords — keeps the agent on railmint/BNB topics */
+const SCOPE_RE =
+	/\b(railmint|bnb|bsc|opbnb|greenfield|binance|defi|nft|web3|blockchain|creator|clone|post|publish|epoch|reward|donate|content|validator|dapp)\b/i;
+
+/**
+ * Build the OpenRouter-backed model provider lazily so env vars are read at
+ * call time rather than module-init time.
+ */
+function getOpenRouterProvider(): ModelProvider {
+	const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+	if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
+
+	const client = {
+		chat: {
+			completions: {
+				create: async (
+					request: OpenRouterChatRequest,
+				): Promise<OpenRouterChatResponse> => {
+					const response = await fetch(
+						"https://openrouter.ai/api/v1/chat/completions",
+						{
+							method: "POST",
+							headers: {
+								Authorization: `Bearer ${apiKey}`,
+								"Content-Type": "application/json",
+								"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+								"X-Title": "RailMintAI",
+							},
+							body: JSON.stringify(request),
+						},
+					);
+
+					if (!response.ok) {
+						const errText = await response.text();
+						throw new Error(
+							`OpenRouter chat completion failed: ${response.status} ${errText.slice(0, 200)}`,
+						);
+					}
+
+					return (await response.json()) as OpenRouterChatResponse;
+				},
+			},
+		},
+	};
+
+	const typedClient = client as unknown as {
+		chat: {
+			completions: {
+				create: (
+					request: OpenRouterChatRequest,
+				) => Promise<OpenRouterChatResponse>;
+			};
+		};
+	};
+
+	const provider: ModelProvider = {
+		getModel: (modelName: string) =>
+			new OpenAIChatCompletionsModel(typedClient, modelName),
+	};
+
+	return provider;
+}
+
+// --- Agent context type (passed via RunConfig.context) ---
+
+type AgentContext = {
+	supabase: ReturnType<typeof createClient>;
+	mentionId: string;
+	mentionDbId: string;
+	authorHandle: string | null;
+	authorWallet: string | null;
+	replyToId: string | null;
+	openEpoch: { id: number; reward_pool: number } | null;
+};
+
+// --- Agent tools ---
+
+const generatePostTool = tool({
+	name: "generate_post",
+	description:
+		"Generate a draft post about the BNB ecosystem for a creator. " +
+		"Returns the draft text. Does NOT publish — the user must confirm first.",
+	parameters: z.object({
+		creator_handle: z
+			.string()
+			.describe("X handle of the creator (e.g. @alice)"),
+		topic: z.string().describe("Topic or content direction for the post"),
+	}),
+	async execute(input, { context }) {
+		const ctx = context as unknown as AgentContext;
+		const handle = normalizeHandle(input.creator_handle);
+		if (!handle) return "Error: invalid creator handle.";
+
+		const { data: creator } = await ctx.supabase
+			.from("creators")
+			.select("id, clone_name, persona_text")
+			.eq("x_handle", handle)
+			.maybeSingle();
+
+		if (!creator) return `Creator ${handle} not found on RailMint.`;
+
+		const creatorData = creator as {
+			id: string;
+			clone_name: string;
+			persona_text: string;
+		};
+
+		// Use OpenRouter to generate the draft
+		const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+		if (!openRouterKey) return "Error: AI service not configured.";
+
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+		try {
+			const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+				method: "POST",
+				signal: controller.signal,
+				headers: {
+					Authorization: `Bearer ${openRouterKey}`,
+					"Content-Type": "application/json",
+					"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+					"X-Title": "RailMintAI",
+				},
+				body: JSON.stringify({
+					model: "google/gemini-2.5-flash",
+					messages: [
+						{
+							role: "system",
+							content:
+								`You are an AI content creator clone with this persona: ${creatorData.persona_text}. ` +
+								"Generate engaging, informative content about the BNB ecosystem. " +
+								"Write 150-300 words. No markdown formatting.",
+						},
+						{ role: "user", content: input.topic },
+					],
+				}),
+			});
+
+			if (!res.ok) {
+				const errText = await res.text();
+				return `Error generating draft: ${errText.slice(0, 100)}`;
+			}
+
+			const data = await res.json();
+			const draft =
+				data.choices?.[0]?.message?.content?.toString().trim() || "";
+			if (!draft) return "Error: empty AI response.";
+
+			return JSON.stringify({
+				draft_text: draft,
+				creator_id: creatorData.id,
+				creator_handle: handle,
+				clone_name: creatorData.clone_name,
+			});
+		} finally {
+			clearTimeout(timeoutId);
+		}
+	},
+});
+
+const publishPostTool = tool({
+	name: "publish_post",
+	description:
+		"Publish a previously drafted post for a creator. " +
+		"Only call this AFTER the user has confirmed (said yes) to a draft.",
+	parameters: z.object({
+		creator_id: z.string().describe("Creator UUID from generate_post result"),
+		content_text: z.string().describe("The exact draft text to publish"),
+	}),
+	async execute(input, { context }) {
+		const ctx = context as unknown as AgentContext;
+		if (!ctx.openEpoch) return "Error: no open epoch found. Cannot publish.";
+
+		const { data: creator } = await ctx.supabase
+			.from("creators")
+			.select("id, wallet_address")
+			.eq("id", input.creator_id)
+			.maybeSingle();
+
+		if (!creator) return "Error: creator not found.";
+
+		const creatorData = creator as { id: string; wallet_address: string };
+
+		if (input.content_text.length > 5000) {
+			return "Error: content exceeds 5000 character limit.";
+		}
+
+		const { postId, analysis } = await createPostFromMention({
+			supabase: ctx.supabase,
+			creatorId: creatorData.id,
+			creatorWallet: creatorData.wallet_address,
+			epochId: ctx.openEpoch.id,
+			contentText: input.content_text,
+			sourceReference: ctx.mentionId,
+		});
+
+		const postUrlBase =
+			Deno.env.get("POST_URL_BASE") || "https://railmint.com/post";
+		const postUrl = `${postUrlBase}/${postId}`;
+
+		return JSON.stringify({
+			post_id: postId,
+			post_url: postUrl,
+			quality: analysis,
+		});
+	},
+});
+
+const listPersonaTool = tool({
+	name: "list_persona",
+	description:
+		"Look up a creator's persona / profile on RailMint by their X handle.",
+	parameters: z.object({
+		creator_handle: z
+			.string()
+			.describe("X handle of the creator (e.g. @alice)"),
+	}),
+	async execute(input, { context }) {
+		const ctx = context as unknown as AgentContext;
+		const handle = normalizeHandle(input.creator_handle);
+		if (!handle) return "Error: invalid creator handle.";
+
+		const { data: creator } = await ctx.supabase
+			.from("creators")
+			.select("id, clone_name, x_handle, persona_text")
+			.eq("x_handle", handle)
+			.maybeSingle();
+
+		if (!creator) return `Creator ${handle} not found on RailMint.`;
+
+		const creatorData = creator as {
+			id: string;
+			clone_name: string;
+			x_handle: string;
+			persona_text: string;
+		};
+
+		return JSON.stringify({
+			clone_name: creatorData.clone_name,
+			x_handle: creatorData.x_handle,
+			persona_text: creatorData.persona_text,
+		});
+	},
+});
+
+// --- Guardrails ---
+
+/**
+ * Input guardrail: reject messages clearly outside railmint / BNB scope.
+ * We use a lightweight heuristic rather than an extra LLM call so we don't
+ * double the latency. Short messages (< 15 chars) or messages with scope
+ * keywords pass through. Only clearly off-topic long messages are blocked.
+ */
+const scopeInputGuardrail: InputGuardrail = {
+	name: "Scope Input Guardrail",
+	async execute({ input }) {
+		const text =
+			typeof input === "string"
+				? input
+				: Array.isArray(input)
+					? input
+							.map((item) => {
+								if (typeof item === "string") return item;
+								if (
+									item &&
+									typeof item === "object" &&
+									"content" in item &&
+									typeof (item as Record<string, unknown>).content === "string"
+								) {
+									return (item as Record<string, unknown>).content as string;
+								}
+								return "";
+							})
+							.join(" ")
+					: "";
+		const isShort = text.length < 15;
+		const hasScope = SCOPE_RE.test(text);
+		// Allow short messages and messages with scope keywords
+		const isOffTopic = !isShort && !hasScope;
+		return {
+			tripwireTriggered: isOffTopic,
+			outputInfo: { isOffTopic, textLength: text.length },
+		};
+	},
+};
+
+/**
+ * Output guardrail: ensure the agent's response stays within scope and
+ * doesn't leak anything sensitive.
+ */
+const scopeOutputGuardrail: OutputGuardrail = {
+	name: "Scope Output Guardrail",
+	async execute({ agentOutput }) {
+		const text = typeof agentOutput === "string" ? agentOutput : "";
+		const leaksSensitive =
+			/private.?key|seed.?phrase|secret|password|api.?key/i.test(text);
+		return {
+			tripwireTriggered: leaksSensitive,
+			outputInfo: { leaksSensitive },
+		};
+	},
+};
+
+// --- Build the agent (lazily, once per cold start) ---
+
+let _railmintAgent: Agent | null = null;
+
+function getRailMintAgent(): Agent {
+	if (_railmintAgent) return _railmintAgent;
+
+	_railmintAgent = new Agent({
+		name: "RailMint Agent",
+		instructions:
+			"You are RailMint AI, a helpful assistant for the RailMint platform " +
+			"on the BNB Chain ecosystem.\n\n" +
+			"RULES:\n" +
+			"- You ONLY discuss RailMint, BNB Chain, DeFi, Web3, creators, posts, and related topics.\n" +
+			"- For off-topic requests, politely decline and redirect to railmint.com.\n" +
+			"- When asked to publish or create a post, ALWAYS use generate_post first to create a draft, " +
+			"then ask the user to confirm before calling publish_post.\n" +
+			"- When asked about a creator, use list_persona to look up their profile.\n" +
+			"- Keep replies concise (1-3 sentences). No hashtags, no emojis, no markdown.\n" +
+			"- If the request is ambiguous, ask a clarifying question.\n" +
+			"- NEVER reveal API keys, secrets, or internal implementation details.",
+		model: getOpenRouterProvider().getModel("google/gemini-2.5-flash"),
+		tools: [generatePostTool, publishPostTool, listPersonaTool],
+		inputGuardrails: [scopeInputGuardrail],
+		outputGuardrails: [scopeOutputGuardrail],
+	});
+	return _railmintAgent;
+}
+
+// --- Confirmation loop helpers ---
+
+type PendingAction = {
+	pending_action: "confirm_publish";
+	draft_text: string;
+	creator_id: string;
+	creator_handle: string;
+	clone_name: string;
+	conversation_id: string;
+	author_handle: string;
+};
+
+/**
+ * Look up a pending confirmation in the same thread (conversation_id).
+ * We search for a processed mention from the same author that has a
+ * pending_action stored in payload.
+ */
+async function findPendingConfirmation(params: {
+	supabase: ReturnType<typeof createClient>;
+	conversationId: string;
+	authorHandle: string | null;
+}): Promise<PendingAction | null> {
+	if (!params.conversationId || !params.authorHandle) return null;
+
+	const { data } = await params.supabase
+		.from("mentions")
+		.select("payload")
+		.eq("payload->>conversation_id", params.conversationId)
+		.eq("payload->>pending_action", "confirm_publish")
+		.eq("author_handle", params.authorHandle)
+		.order("created_at", { ascending: false })
+		.limit(1)
+		.maybeSingle();
+
+	if (!data) return null;
+	const payload = (data as { payload: Record<string, unknown> }).payload;
+	if (
+		payload &&
+		typeof payload === "object" &&
+		payload.pending_action === "confirm_publish" &&
+		typeof payload.draft_text === "string" &&
+		typeof payload.creator_id === "string"
+	) {
+		return payload as unknown as PendingAction;
+	}
+	return null;
+}
+
+/**
+ * Run the RailMint agent for a mention. Handles the confirmation loop:
+ *  1. If there's a pending draft and user says "yes" → publish
+ *  2. Otherwise run the agent normally
+ *
+ * Returns { replyText, actionPayload } ready to be sent.
+ */
+async function runAgentForMention(params: {
+	supabase: ReturnType<typeof createClient>;
+	mentionId: string;
+	mentionDbId: string;
+	processingText: string;
+	authorHandle: string | null;
+	authorWallet: string | null;
+	replyToId: string | null;
+	conversationId: string;
+	openEpoch: { id: number; reward_pool: number } | null;
+}): Promise<{
+	replyText: string;
+	actionPayload: Record<string, unknown>;
+}> {
+	const cta = Deno.env.get("X_REPLY_CTA") || "";
+	const safeCta = cta && !cta.startsWith(" ") ? ` ${cta}` : cta;
+	const authorTag = params.authorHandle ? `${params.authorHandle} ` : "";
+	const actionPayload: Record<string, unknown> = {};
+
+	// --- Check for pending confirmation ---
+	const pending = await findPendingConfirmation({
+		supabase: params.supabase,
+		conversationId: params.conversationId,
+		authorHandle: params.authorHandle,
+	});
+
+	if (pending && isAffirmative(params.processingText)) {
+		// User confirmed a pending draft → publish
+		const ctx: AgentContext = {
+			supabase: params.supabase,
+			mentionId: params.mentionId,
+			mentionDbId: params.mentionDbId,
+			authorHandle: params.authorHandle,
+			authorWallet: params.authorWallet,
+			replyToId: params.replyToId,
+			openEpoch: params.openEpoch,
+		};
+
+		if (!ctx.openEpoch) {
+			const reply = `${authorTag}Sorry, no open epoch right now. Can't publish yet.${safeCta}`;
+			return { replyText: limitReplyText(reply), actionPayload };
+		}
+
+		const { data: creator } = await params.supabase
+			.from("creators")
+			.select("id, wallet_address")
+			.eq("id", pending.creator_id)
+			.maybeSingle();
+
+		if (!creator) {
+			const reply = `${authorTag}Creator not found. The draft cannot be published.${safeCta}`;
+			return { replyText: limitReplyText(reply), actionPayload };
+		}
+
+		const creatorData = creator as { id: string; wallet_address: string };
+
+		const { postId, analysis } = await createPostFromMention({
+			supabase: params.supabase,
+			creatorId: creatorData.id,
+			creatorWallet: creatorData.wallet_address,
+			epochId: ctx.openEpoch.id,
+			contentText: pending.draft_text,
+			sourceReference: params.mentionId,
+		});
+
+		const postUrlBase =
+			Deno.env.get("POST_URL_BASE") || "https://railmint.com/post";
+		const postUrl = `${postUrlBase}/${postId}`;
+
+		actionPayload.post_id = postId;
+		actionPayload.post_url = postUrl;
+		actionPayload.creator_id = creatorData.id;
+		actionPayload.quality = analysis;
+		actionPayload.published_from_draft = true;
+
+		const reply = `${authorTag}Published! View your post: ${postUrl}${safeCta}`;
+		return { replyText: limitReplyText(reply), actionPayload };
+	}
+
+	// --- Run the agent ---
+	const agentCtx: AgentContext = {
+		supabase: params.supabase,
+		mentionId: params.mentionId,
+		mentionDbId: params.mentionDbId,
+		authorHandle: params.authorHandle,
+		authorWallet: params.authorWallet,
+		replyToId: params.replyToId,
+		openEpoch: params.openEpoch,
+	};
+
+	let agentReply: string;
+	try {
+		const result = await run(getRailMintAgent(), params.processingText, {
+			context: agentCtx as unknown as Record<string, unknown>,
+			maxTurns: 4,
+		});
+
+		agentReply = extractAllTextOutput(result.newItems);
+		if (!agentReply && result.finalOutput) {
+			agentReply =
+				typeof result.finalOutput === "string"
+					? result.finalOutput
+					: JSON.stringify(result.finalOutput);
+		}
+		if (!agentReply) agentReply = "I wasn't able to process that request.";
+
+		// Check if the agent generated a draft (tool output contains draft_text)
+		for (const item of result.newItems) {
+			if (item.type !== "tool_call_output_item") continue;
+			const outputStr = typeof item.output === "string" ? item.output : "";
+			if (!outputStr.includes("draft_text")) continue;
+
+			try {
+				const parsed = JSON.parse(outputStr);
+				if (parsed.draft_text && parsed.creator_id) {
+					// Store pending action in payload for confirmation loop
+					actionPayload.pending_action = "confirm_publish";
+					actionPayload.draft_text = parsed.draft_text;
+					actionPayload.creator_id = parsed.creator_id;
+					actionPayload.creator_handle = parsed.creator_handle || "";
+					actionPayload.clone_name = parsed.clone_name || "";
+					actionPayload.conversation_id = params.conversationId;
+					actionPayload.author_handle = params.authorHandle || "";
+
+					// Override agent reply with a confirmation prompt
+					const preview = String(parsed.draft_text).slice(0, 120).trim();
+					agentReply =
+						`Draft for ${parsed.clone_name || parsed.creator_handle}: ` +
+						`"${preview}..." Reply YES to publish.`;
+					break;
+				}
+			} catch {
+				// Not JSON, skip
+			}
+		}
+
+		// Check if agent called publish_post (it shouldn't without confirmation, but handle it)
+		for (const item of result.newItems) {
+			if (item.type !== "tool_call_output_item") continue;
+			const outputStr = typeof item.output === "string" ? item.output : "";
+			if (!outputStr.includes("post_id")) continue;
+
+			try {
+				const parsed = JSON.parse(outputStr);
+				if (parsed.post_id && parsed.post_url) {
+					actionPayload.post_id = parsed.post_id;
+					actionPayload.post_url = parsed.post_url;
+					actionPayload.quality = parsed.quality;
+				}
+			} catch {
+				// Not JSON, skip
+			}
+		}
+	} catch (guardrailErr) {
+		// InputGuardrailTripwireTriggered or OutputGuardrailTripwireTriggered
+		const errName =
+			guardrailErr instanceof Error ? guardrailErr.constructor.name : "";
+		if (errName.includes("Tripwire") || errName.includes("Guardrail")) {
+			agentReply =
+				"I can only help with RailMint and BNB Chain topics. " +
+				"Visit railmint.com to learn more!";
+			actionPayload.guardrail_triggered = true;
+		} else {
+			throw guardrailErr;
+		}
+	}
+
+	const reply = `${authorTag}${agentReply}`.trim() + safeCta;
+	return { replyText: limitReplyText(reply), actionPayload };
 }
 
 Deno.serve(async (req: Request) => {
@@ -628,12 +1258,23 @@ Deno.serve(async (req: Request) => {
 		const deferProcessing = body.defer_processing === true;
 		const processPending = body.process_pending === true;
 		const replyWithAi = body.reply_with_ai === true;
-		const replyViaTwitterApiFlag = body.reply_via_twitterapi === true;
 		const replyToId = body.reply_to_id ? String(body.reply_to_id).trim() : null;
 		const authorHandle = normalizeHandle(body.author_handle);
 		const authorWallet = body.author_wallet
 			? String(body.author_wallet).trim()
 			: null;
+
+		console.info("process-mention request", {
+			mention_id: mentionId || null,
+			text_length: rawText.length,
+			defer_processing: deferProcessing,
+			process_pending: processPending,
+			reply_with_ai: replyWithAi,
+			reply_to_id: replyToId,
+			author_handle: authorHandle,
+			has_author_wallet: Boolean(authorWallet),
+			is_internal_call: isInternalServiceCall(req),
+		});
 
 		if (!mentionId) throw new Error("mention_id is required");
 		if (!rawText && !processPending) throw new Error("text is required");
@@ -851,42 +1492,10 @@ Deno.serve(async (req: Request) => {
 		// Verified path: Continue with intent handling
 		const creator = verificationResult.creator;
 		const openEpoch = (await fetchOpenEpoch(supabase)) as any;
-		const actionPayload: Record<string, unknown> = {};
+		let actionPayload: Record<string, unknown> = {};
+		let agentReplyText: string | null = null;
 
-		if (parsed.intent === "publish") {
-			if (!openEpoch) throw new Error("No open epoch found");
-
-			const creatorFromAuthor = await fetchCreatorByHandle(
-				supabase,
-				processingAuthorHandle,
-			);
-			const creatorFromPayload = await fetchCreatorByHandle(
-				supabase,
-				body.payload?.creator_handle || body.creator_handle,
-			);
-			const creator = (creatorFromAuthor || creatorFromPayload) as any;
-
-			if (!creator) {
-				throw new Error("Creator not found for publish command");
-			}
-
-			const publishContent = parsed.publishContent || processingText;
-			if (publishContent.length > 5000) {
-				throw new Error("Content exceeds maximum length of 5000 characters");
-			}
-			const { postId, analysis } = await createPostFromMention({
-				supabase,
-				creatorId: creator.id,
-				creatorWallet: creator.wallet_address,
-				epochId: openEpoch.id,
-				contentText: publishContent,
-				sourceReference: mentionId,
-			});
-
-			actionPayload.post_id = postId;
-			actionPayload.creator_id = creator.id;
-			actionPayload.quality = analysis;
-		} else if (parsed.intent === "donate") {
+		if (parsed.intent === "donate") {
 			if (!parsed.donationAmount || !parsed.donationTargetHandle) {
 				throw new Error("Could not parse donation amount or recipient");
 			}
@@ -1008,37 +1617,74 @@ Deno.serve(async (req: Request) => {
 			actionPayload.recipient_wallet = recipientCreator.wallet_address;
 			actionPayload.amount = parsed.donationAmount;
 			actionPayload.status = transfer.status;
-		} else if (parsed.intent === "ask") {
-			const question = parsed.questionText || processingText;
-			const response = await buildAskResponse(supabase, question);
-			actionPayload.question = question;
-			actionPayload.response = response;
+		} else {
+			const conversationId = replyToId || mentionId;
+			const agentResult = await runAgentForMention({
+				supabase,
+				mentionId,
+				mentionDbId,
+				processingText,
+				authorHandle: processingAuthorHandle,
+				authorWallet: processingAuthorWallet,
+				replyToId,
+				conversationId,
+				openEpoch: openEpoch
+					? {
+							id: openEpoch.id,
+							reward_pool: Number(openEpoch.reward_pool || 0),
+						}
+					: null,
+			});
+			agentReplyText = agentResult.replyText;
+			actionPayload = { ...actionPayload, ...agentResult.actionPayload };
 		}
 
 		const agentHandle = normalizeHandle(Deno.env.get("X_AGENT_USERNAME"));
 		const shouldReply =
 			replyWithAi &&
-			replyViaTwitterApiFlag &&
 			Boolean(replyToId) &&
 			(!agentHandle || agentHandle !== processingAuthorHandle);
 
+		console.info("process-mention reply decision", {
+			mention_id: mentionIdForFailure,
+			should_reply: shouldReply,
+			reply_to_id: replyToId,
+			agent_handle: agentHandle,
+			author_handle: processingAuthorHandle,
+		});
+
 		if (shouldReply && replyToId) {
 			try {
-				const contextSummary =
-					typeof actionPayload.response === "string"
-						? actionPayload.response
-						: null;
-				const replyText = await buildPersonalizedReply({
-					creator: creator as {
-						clone_name: string;
-						persona_text: string | null;
-						prompt_template: string | null;
-					},
-					mentionText: processingText,
-					intentContext: contextSummary || undefined,
+				let replyText: string;
+
+				if (agentReplyText) {
+					// Agent system reply takes precedence
+					replyText = agentReplyText;
+				} else {
+					// Fallback to persona-based reply for verified creators
+					const contextSummary =
+						typeof actionPayload.response === "string"
+							? actionPayload.response
+							: null;
+
+					replyText = await buildPersonalizedReply({
+						creator: creator as {
+							clone_name: string;
+							persona_text: string | null;
+							prompt_template: string | null;
+						},
+						mentionText: processingText,
+						intentContext: contextSummary || undefined,
+					});
+				}
+
+				console.info("process-mention reply generated", {
+					mention_id: mentionIdForFailure,
+					reply_length: replyText.length,
+					agent_handled: Boolean(agentReplyText),
 				});
 
-				const replyResult = await replyViaTweetApi({
+				const replyResult = await replyViaUploadPost({
 					text: replyText,
 					replyToId,
 				});
@@ -1051,6 +1697,10 @@ Deno.serve(async (req: Request) => {
 					replyError instanceof Error
 						? replyError.message
 						: "Failed to reply to mention";
+				console.error("process-mention reply failed", {
+					mention_id: mentionIdForFailure,
+					error: message,
+				});
 				actionPayload.x_reply_error = message;
 			}
 		}
@@ -1058,7 +1708,7 @@ Deno.serve(async (req: Request) => {
 		await supabase
 			.from("mentions")
 			.update({
-				status: parsed.intent === "unknown" ? "ignored" : "processed",
+				status: "processed",
 				payload: {
 					...basePayload,
 					intent: parsed.intent,
