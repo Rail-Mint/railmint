@@ -20,6 +20,7 @@ import {
 	tool,
 } from "npm:@openai/agents@0.4.11";
 import type { ModelProvider } from "npm:@openai/agents-core@0.4.11";
+import { buildContextPack } from "../_shared/context-pack.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -342,7 +343,7 @@ async function lookupVerifiedCreator(
 ) {
 	const normalizedHandle = normalizeHandle(authorHandle);
 	if (!normalizedHandle) {
-		return { found: false, verified: false, creator: null };
+		return { found: false, verified: false, creator: null, contextPack: null };
 	}
 
 	const { data: creator } = await supabase
@@ -353,10 +354,16 @@ async function lookupVerifiedCreator(
 		.eq("x_handle", normalizedHandle)
 		.maybeSingle();
 
+	const isCreatorVerified = creator && creator.x_verified === true;
+	const contextPack = isCreatorVerified
+		? await buildContextPack(supabase, creator.id)
+		: null;
+
 	return {
 		found: !!creator,
 		verified: creator?.x_verified === true,
 		creator: creator || null,
+		contextPack,
 	};
 }
 
@@ -573,6 +580,7 @@ async function buildPersonalizedReply(params: {
 	};
 	mentionText: string;
 	intentContext?: string | null;
+	contextPack?: any;
 }) {
 	const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
 	if (!openRouterKey) {
@@ -587,6 +595,32 @@ async function buildPersonalizedReply(params: {
 		`Mention text: ${params.mentionText}`,
 		params.intentContext ? `Context: ${params.intentContext}` : null,
 	].filter(Boolean);
+
+	if (params.contextPack) {
+		if (params.contextPack.persona) {
+			contextLines.push(`\n### YOUR IDENTITY\n${params.contextPack.persona}`);
+		}
+
+		if (params.contextPack.posts && params.contextPack.posts.length > 0) {
+			const postsSummary = params.contextPack.posts
+				.map(
+					(p: any) =>
+						`- ${p.topic || "General"}: ${p.post_content.substring(0, 100)}...`,
+				)
+				.join("\n");
+			contextLines.push(`\n### YOUR RECENT POSTS\n${postsSummary}`);
+		}
+
+		if (params.contextPack.news && params.contextPack.news.length > 0) {
+			const newsSummary = params.contextPack.news[0].digest_bullets
+				.slice(0, 5)
+				.map((b: any) => `- ${b.text} (${b.source})`)
+				.join("\n");
+			contextLines.push(`\n### RELEVANT NEWS\n${newsSummary}`);
+		}
+
+		console.log(`Context pack tokens: ${params.contextPack.totalTokens}`);
+	}
 
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 20000);
@@ -1491,6 +1525,7 @@ Deno.serve(async (req: Request) => {
 
 		// Verified path: Continue with intent handling
 		const creator = verificationResult.creator;
+		const contextPack = verificationResult.contextPack;
 		const openEpoch = (await fetchOpenEpoch(supabase)) as any;
 		let actionPayload: Record<string, unknown> = {};
 		let agentReplyText: string | null = null;
@@ -1661,7 +1696,6 @@ Deno.serve(async (req: Request) => {
 					// Agent system reply takes precedence
 					replyText = agentReplyText;
 				} else {
-					// Fallback to persona-based reply for verified creators
 					const contextSummary =
 						typeof actionPayload.response === "string"
 							? actionPayload.response
@@ -1675,6 +1709,7 @@ Deno.serve(async (req: Request) => {
 						},
 						mentionText: processingText,
 						intentContext: contextSummary || undefined,
+						contextPack,
 					});
 				}
 

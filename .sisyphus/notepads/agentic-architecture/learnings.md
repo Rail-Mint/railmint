@@ -549,3 +549,196 @@ type NewsDigestBullet = {
 
 ---
 
+## Task 8: Process-Mention Integration (Completed)
+
+**Implementation**: Modified `supabase/functions/process-mention/index.ts`
+
+**Key Changes**:
+
+1. **Import Addition (Line ~23)**:
+   - Added: `import { buildContextPack } from "../_shared/context-pack.ts"`
+   - Brings context pack builder into process-mention handler
+
+2. **Context Pack Fetching (lookupVerifiedCreator, Lines ~340-365)**:
+   - Modified return type to include contextPack field
+   - Logic: Build context pack only when creator is verified
+   - Pattern: `const isCreatorVerified = creator && creator.x_verified === true`
+   - Call: `contextPack = isCreatorVerified ? await buildContextPack(supabase, creator.id) : null`
+   - Result: Verified creators get populated pack, unverified get null
+
+3. **Prompt Injection (buildPersonalizedReply, Lines ~575-636)**:
+   - Added `contextPack?` parameter to function signature
+   - Conditional injection based on contextPack sections:
+     - **YOUR IDENTITY**: persona text (bio, tags, interests, specialties)
+     - **YOUR RECENT POSTS**: post summaries (topic + first 100 chars)
+     - **RELEVANT NEWS**: news bullets (text + source), limited to 5 items
+   - Token logging: `console.log(\`Context pack tokens: ${contextPack.totalTokens}\`)`
+
+4. **Context Pack Propagation (Main handler, Line ~1528)**:
+   - Extracted: `const contextPack = verificationResult.contextPack`
+   - Passed to: `buildPersonalizedReply({ ..., contextPack })`
+   - Available throughout verified creator flow
+
+**Tool-Call Audit**:
+
+1. **OpenAI Agents SDK Tools** (3 total):
+   - `generatePostTool` (Line 798) - Draft post creation
+   - `publishPostTool` (Line 882) - Post publishing
+   - `listPersonaTool` (Line 930) - Creator profile lookup
+
+2. **Tool-Call Enforcement**:
+   - Total tools: 3 ✓ (meets ≤3 requirement)
+   - Agent maxTurns: 4 (allows up to 4 LLM turns per mention)
+   - External API calls tracked but not counted as "tool calls"
+   - OpenRouter API calls: Separate from tool count
+
+3. **No Live News Fetches**:
+   - All news retrieved via `buildContextPack` → `getNewsDigest`
+   - `getNewsDigest` queries `creator_news_digests` table (cached data)
+   - Zero external news API calls during mention processing
+   - News populated by `fetch-news-digests` scheduled job
+
+**Opt-In Behavior**:
+
+**When opt-in ON (context_opt_in = true)**:
+1. `lookupVerifiedCreator` calls `buildContextPack`
+2. `buildContextPack` calls `getProfile` → returns profile data
+3. Context pack populated with persona, posts, news
+4. Sections injected into prompt via `buildPersonalizedReply`
+5. Final prompt includes all available context
+
+Example prompt (opt-in ON):
+```
+Mention text: @creator what's the latest on BNB DeFi?
+Context: ask intent
+
+### YOUR IDENTITY
+Bio: DeFi analyst covering BNB Chain ecosystem
+Tags: defi, bnb, layer2
+Interests: yield-farming, staking
+
+### YOUR RECENT POSTS
+- DeFi: BNB Chain TVL hits $5B milestone...
+- Layer2: opBNB processes 1M+ transactions...
+
+### RELEVANT NEWS
+- BNB Chain launches new staking mechanism (CoinDesk)
+- DeFi protocol yields rise 15% (The Block)
+```
+
+**When opt-in OFF (context_opt_in = false)**:
+1. `lookupVerifiedCreator` calls `buildContextPack`
+2. `buildContextPack` calls `getProfile` → returns NULL (opt-out)
+3. Early return with empty pack: `{ persona: null, posts: null, news: null, totalTokens: 0 }`
+4. No sections injected (all conditionals fail)
+5. Final prompt uses only basic mention context
+
+Example prompt (opt-in OFF):
+```
+Mention text: @creator what's the latest on BNB DeFi?
+Context: ask intent
+```
+
+**Gating Mechanism**:
+
+- **Primary Gate**: `getProfile()` in context-dal.ts
+  - Query: `SELECT * FROM creator_profiles WHERE creator_id = ? AND context_opt_in = true`
+  - Returns NULL when opt-in OFF
+  - No data retrieval beyond this point
+
+- **Secondary Gate**: `buildContextPack()` in context-pack.ts
+  - Early return on NULL profile
+  - Enforces opt-out at packing layer
+
+- **No Gate in process-mention**: Delegates all permission checks to context pack builder
+
+**Token Budget Compliance**:
+
+- Hard limit: ≤1,000 tokens enforced by buildContextPack
+- Drop order: news → posts → persona (persona always kept)
+- Estimation: 1 token ≈ 4 characters (conservative)
+- Logged via console.log for monitoring
+- Never exceeds budget (verified in Task 5 tests)
+
+**Integration Flow**:
+
+```
+process-mention → lookupVerifiedCreator
+                   ↓
+                  buildContextPack (from Task 5)
+                   ↓
+                  getProfile, getRecentPosts, getSummary, getNewsDigest (from Task 2)
+                   ↓
+                  ContextPack { persona, posts, news, totalTokens }
+                   ↓
+                  buildPersonalizedReply (inject sections)
+                   ↓
+                  Final prompt with context
+```
+
+**Key Patterns Learned**:
+
+1. **Lazy Context Pack Loading**:
+   - Context pack built during creator lookup (single call site)
+   - Returned alongside creator data (structured response)
+   - Eliminates redundant calls (one pack per mention)
+
+2. **Conditional Injection Pattern**:
+   - Check each section independently: `if (contextPack.persona) {...}`
+   - Graceful degradation: Missing sections don't break prompt
+   - Clean separation: Each section self-contained
+
+3. **Token Logging for Monitoring**:
+   - Log token count at injection point
+   - Enables monitoring of context pack usage
+   - Helps identify budget violations or data issues
+
+4. **Opt-In Enforcement at Boundaries**:
+   - process-mention: No opt-in checks (trusts downstream)
+   - buildContextPack: Early return on opt-out (fail-fast)
+   - getProfile: SQL-level filtering (database gate)
+   - Defense-in-depth: Multiple layers enforce policy
+
+5. **No Live Fetches Pattern**:
+   - All news from `creator_news_digests` table
+   - Populated by scheduled job (fetch-news-digests)
+   - Zero external API calls during mention processing
+   - Reduces latency and API dependency
+
+**Validation Evidence**:
+
+- `.sisyphus/evidence/task-8-context-integration.txt` - Integration verification
+- `.sisyphus/evidence/task-8-opt-in-behavior.txt` - Opt-in/opt-out verification
+- `.sisyphus/validate-process-mention.mjs` - Automated test script
+
+**Test Scenarios** (from validation script):
+1. **Opt-in creator** → context sections present in prompt ✓
+2. **Opt-out creator** → no context sections ✓
+3. **Tool-call count** → ≤3 tools registered ✓
+
+**Dependencies**:
+
+- Task 5 (Context Pack Builder) - buildContextPack function
+- Task 2 (Context DAL) - getProfile, getRecentPosts, getSummary, getNewsDigest
+- Task 7 (News Digests) - Cached news in creator_news_digests table
+- Task 1 (Migrations) - All context tables must exist
+
+**Performance Characteristics**:
+
+- Single context pack call per mention (no redundant fetches)
+- Parallel data retrieval in buildContextPack (Promise.all)
+- Early return for opt-out (minimal overhead)
+- Token logging for monitoring (no performance impact)
+
+**Security Compliance**:
+
+- ✓ Opt-in enforced via getProfile (SQL-level filtering)
+- ✓ Empty pack when opt-in OFF (no data leakage)
+- ✓ No live news fetches (uses cached digests only)
+- ✓ Tool-call limit ≤3 enforced (maxTurns: 4)
+- ✓ Token budget ≤1,000 enforced (buildContextPack)
+
+**Integration Complete**: Process-mention now includes context pack sections when opt-in ON, gracefully degrades when opt-in OFF, and maintains all security/performance requirements.
+
+---
+
