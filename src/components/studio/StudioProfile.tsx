@@ -133,7 +133,11 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 
 		setVerifyingX(true);
 		try {
-			const redirectUri = `${window.location.origin}/studio/profile`;
+			// Always use the canonical published URL as the redirect_uri.
+			// X OAuth requires the redirect_uri to exactly match a pre-registered callback URL.
+			// Dynamic preview/dev URLs are not registered and will cause "Something went wrong" on X.
+			const canonicalOrigin = "https://railmint.lovable.app";
+			const redirectUri = `${canonicalOrigin}/studio/profile`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
 			// Open in a new tab — X blocks OAuth when loaded inside an iframe
 			const popup = window.open(authUrl, "_blank");
@@ -186,7 +190,8 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		invokeWithSignature("x-verify", {
 			code,
 			code_verifier: codeVerifier,
-			redirect_uri: `${window.location.origin}/studio/profile`,
+			// Must exactly match the redirect_uri used when requesting the code
+			redirect_uri: `https://railmint.lovable.app/studio/profile`,
 		}, profile.wallet_address)
 			.then((data) => {
 				onProfileUpdate({
