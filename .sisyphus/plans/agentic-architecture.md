@@ -783,7 +783,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-12-preferences.png
   ```
 
-- [ ] 13. Context pack unit tests (budget + drop order + opt-in)
+- [ ] 13. Context pack unit tests (budget + drop order + opt-in) [SKIPPED - timeout]
 
   **What to do**:
   - Add Vitest tests for context pack builder
@@ -862,7 +862,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-14-tests.txt
   ```
 
-- [ ] 15. Digest/summary job tests (no live fetch + opt-in behavior)
+- [ ] 15. Digest/summary job tests (no live fetch + opt-in behavior) [SKIPPED - timeout]
 
   **What to do**:
   - Add tests for digest job: cached allowlist sources, no live fetch in mention flow
@@ -902,7 +902,7 @@ Wave FINAL (after all tasks): compliance audits + QA sweeps
     Evidence: .sisyphus/evidence/task-15-tests.txt
   ```
 
-- [ ] 16. UI tests for profile/preferences
+- [x] 16. UI tests for profile/preferences
 
   **What to do**:
   - Add UI tests for structured profile fields, opt-in toggle, topics, and cadence
