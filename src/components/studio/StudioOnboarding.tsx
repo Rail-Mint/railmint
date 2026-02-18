@@ -232,7 +232,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
           await invokeWithSignature("x-verify", {
             code,
             code_verifier: codeVerifier,
-            redirect_uri: "https://railmint.lovable.app/studio/oauth-callback",
+            redirect_uri: "https://railmint.lovable.app/studio/profile",
           }, address);
           toast({ title: "X account verified!", description: "Your X account is now linked." });
           onComplete();
@@ -278,7 +278,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
   const handleVerifyX = useCallback(async () => {
     setVerifyingX(true);
     try {
-      const redirectUri = "https://railmint.lovable.app/studio/oauth-callback";
+      const redirectUri = "https://railmint.lovable.app/studio/profile";
       const authUrl = await buildXOAuthUrl(redirectUri);
 
       const width = 500;

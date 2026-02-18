@@ -54,6 +54,10 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const popupRef = useRef<Window | null>(null);
 
+	// Detect if this page load is the OAuth popup callback (has ?code= or ?error= in URL)
+	const urlParams = new URLSearchParams(window.location.search);
+	const isOAuthPopup = !!window.opener && (urlParams.has("code") || urlParams.has("error"));
+
 	useEffect(() => {
 		if (profile) {
 			setForm({
@@ -118,13 +122,48 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 		setEditing(false);
 	}, [profile]);
 
+	// Handle OAuth callback params when X redirects back to /studio/profile inside the popup
+	useEffect(() => {
+		const params = new URLSearchParams(window.location.search);
+		const code = params.get("code");
+		const state = params.get("state");
+		const error = params.get("error");
+
+		if (!code && !error) return; // Not a callback
+
+		// Remove params from URL without navigating
+		window.history.replaceState({}, "", window.location.pathname);
+
+		const message = error
+			? { type: "x-oauth-error", error: params.get("error_description") || error }
+			: { type: "x-oauth-complete", code, state };
+
+		// If inside popup, relay to parent and close
+		if (window.opener && !window.opener.closed) {
+			try {
+				window.opener.postMessage(message, window.location.origin);
+				window.close();
+				return;
+			} catch {}
+		}
+
+		// BroadcastChannel fallback
+		try {
+			const bc = new BroadcastChannel("x_oauth_channel");
+			bc.postMessage(message);
+			bc.close();
+		} catch {
+			localStorage.setItem("x_oauth_result", JSON.stringify(message));
+		}
+	}, []);
+
 	const handleVerifyX = useCallback(async () => {
 		if (!profile?.id) return;
 
 		setVerifyingX(true);
 		try {
 			const canonicalOrigin = "https://railmint.lovable.app";
-			const redirectUri = `${canonicalOrigin}/studio/oauth-callback`;
+			const redirectUri = `${canonicalOrigin}/studio/profile`;
 			const authUrl = await buildXOAuthUrl(redirectUri);
 
 			// Open as a centered popup
@@ -204,7 +243,7 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 					const data = await invokeWithSignature("x-verify", {
 						code,
 						code_verifier: codeVerifier,
-						redirect_uri: "https://railmint.lovable.app/studio/oauth-callback",
+						redirect_uri: "https://railmint.lovable.app/studio/profile",
 					}, profile!.wallet_address);
 
 					onProfileUpdate({
@@ -255,6 +294,19 @@ export function StudioProfile({ profile, onProfileUpdate }: Props) {
 			clearInterval(pollInterval);
 		};
 	}, [profile, invokeWithSignature, onProfileUpdate, toast]);
+
+	// If this is the OAuth popup callback, render a minimal closing UI
+	if (isOAuthPopup) {
+		return (
+			<div className="flex min-h-screen items-center justify-center bg-background p-6">
+				<div className="flex flex-col items-center gap-4 text-center">
+					<Loader2 className="h-8 w-8 animate-spin text-primary" />
+					<p className="text-sm text-muted-foreground">Completing verification…</p>
+					<p className="text-xs text-muted-foreground">This window will close automatically.</p>
+				</div>
+			</div>
+		);
+	}
 
 	if (!profile) return null;
 

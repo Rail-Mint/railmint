@@ -132,7 +132,7 @@ Deno.serve(async (req: Request) => {
     // Find the creator by wallet
     const { data: creator, error: findErr } = await supabase
       .from("creators")
-      .select("id, x_handle")
+      .select("id, x_handle, x_verified")
       .eq("wallet_address", wallet_address)
       .maybeSingle();
 
