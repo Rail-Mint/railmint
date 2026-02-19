@@ -8,7 +8,6 @@ import { BrandMark } from "@/components/branding/BrandMark";
 import { Button } from "@/components/ui/button";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 
-
 const navLinks = [
 	{ to: "/feed", label: "Feed" },
 	{ to: "/leaderboard", label: "Leaderboard" },
@@ -21,7 +20,6 @@ export function Navbar() {
 	const location = useLocation();
 	const [mobileOpen, setMobileOpen] = useState(false);
 	const { isConnected } = useAccount();
-	
 
 	return (
 		<header className="sticky top-0 z-50 border-b border-border/70 bg-background/72 backdrop-blur-md">
@@ -51,7 +49,7 @@ export function Navbar() {
 				</nav>
 
 				<div className="flex items-center gap-2">
-				<Button
+					<Button
 						variant="ghost"
 						size="icon"
 						aria-label="Toggle theme"
@@ -73,6 +71,9 @@ export function Navbar() {
 						variant="ghost"
 						size="icon"
 						className="md:hidden"
+						aria-label={
+							mobileOpen ? "Close navigation menu" : "Open navigation menu"
+						}
 						onClick={() => setMobileOpen(!mobileOpen)}
 					>
 						{mobileOpen ? (

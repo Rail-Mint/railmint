@@ -18,12 +18,36 @@ import { StudioSettings } from "@/components/studio/StudioSettings";
 import { StudioWallet } from "@/components/studio/StudioWallet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { CreatorProfile } from "@/hooks/useStudioData";
 import { useStudioData } from "@/hooks/useStudioData";
+import { isStudioWalletBypassEnabled } from "@/lib/testing";
+
+const TEST_WALLET_ADDRESS = "0x1111111111111111111111111111111111111111";
+const TEST_PROFILE: NonNullable<CreatorProfile> = {
+	id: "test-bypass-profile",
+	clone_name: "Test Creator",
+	x_handle: "railmint_test",
+	persona_text:
+		"This is a test-only profile used to bypass wallet login in Studio.",
+	prompt_template: "Generate concise, helpful content in RailMint style.",
+	wallet_address: TEST_WALLET_ADDRESS,
+	x_verified: false,
+	x_verified_at: null,
+	is_active: true,
+	bio: "Automation profile for Studio testing",
+	tags: ["test"],
+	interests: ["automation"],
+	specialties: ["studio-ui"],
+};
 
 export default function Studio() {
 	const { address, isConnected } = useAccount();
 	const { connectAsync } = useConnect();
 	const location = useLocation();
+	const bypassWalletLogin = isStudioWalletBypassEnabled();
+	const effectiveAddress =
+		address ?? (bypassWalletLogin ? TEST_WALLET_ADDRESS : undefined);
+	const hasStudioAccess = isConnected || bypassWalletLogin;
 
 	const [connectError, setConnectError] = useState<string | null>(null);
 	const [densityCompact, setDensityCompact] = useState(false);
@@ -46,6 +70,8 @@ export default function Studio() {
 		bestPost,
 		profileCompletion,
 	} = useStudioData(address);
+
+	const effectiveProfile = profile ?? (bypassWalletLogin ? TEST_PROFILE : null);
 
 	const handleConnect = useCallback(
 		async (connector: any) => {
@@ -70,17 +96,17 @@ export default function Studio() {
 	);
 
 	// Not connected — show login
-	if (!isConnected) {
+	if (!hasStudioAccess) {
 		return (
 			<StudioLogin connectError={connectError} onConnect={handleConnect} />
 		);
 	}
 
 	// Connected but no profile — show onboarding wizard
-	if (!loading && !profile && address) {
+	if (!loading && !effectiveProfile && effectiveAddress) {
 		return (
 			<StudioLayout profileName={null}>
-				<StudioOnboarding address={address} onComplete={refetch} />
+				<StudioOnboarding address={effectiveAddress} onComplete={refetch} />
 			</StudioLayout>
 		);
 	}
@@ -115,7 +141,7 @@ export default function Studio() {
 			);
 		}
 
-		if (!profile) {
+		if (!effectiveProfile) {
 			return (
 				<Card className="border-border/40">
 					<CardContent className="py-12 text-center text-sm text-muted-foreground">
@@ -132,7 +158,7 @@ export default function Studio() {
 			case "overview":
 				return (
 					<StudioOverview
-						profile={profile}
+						profile={effectiveProfile}
 						profileCompletion={profileCompletion}
 						recentPostsLast7Days={recentPostsLast7Days}
 						averageLikes={averageLikes}
@@ -143,21 +169,26 @@ export default function Studio() {
 			case "profile":
 				return (
 					<StudioProfile
-						profile={profile}
+						profile={effectiveProfile}
 						onProfileUpdate={(updated) => setProfile(updated)}
 					/>
 				);
 			case "content":
 				return (
 					<StudioContent
-						profile={profile}
-						address={address}
+						profile={effectiveProfile}
+						address={effectiveAddress}
 						recentPosts={recentPosts}
 						onPostsUpdate={setRecentPosts}
 					/>
 				);
 			case "bot-tester":
-				return <StudioBotTester profile={profile} address={address} />;
+				return (
+					<StudioBotTester
+						profile={effectiveProfile}
+						address={effectiveAddress}
+					/>
+				);
 			case "analytics":
 				return (
 					<StudioAnalytics
@@ -175,16 +206,25 @@ export default function Studio() {
 				return <StudioRewards rewardHistory={rewardHistory} />;
 			case "wallet":
 				return (
-					<StudioWallet address={address} profile={profile} stats={stats} />
+					<StudioWallet
+						address={effectiveAddress}
+						profile={effectiveProfile}
+						stats={stats}
+					/>
 				);
 			case "security":
-				return <StudioSecurity address={address} profile={profile} />;
+				return (
+					<StudioSecurity
+						address={effectiveAddress}
+						profile={effectiveProfile}
+					/>
+				);
 			case "settings":
 				return (
 					<StudioSettings
 						densityCompact={densityCompact}
 						onDensityChange={setDensityCompact}
-						profile={profile}
+						profile={effectiveProfile}
 						onProfileUpdate={refetch}
 					/>
 				);
@@ -192,7 +232,7 @@ export default function Studio() {
 			default:
 				return (
 					<StudioOverview
-						profile={profile}
+						profile={effectiveProfile}
 						profileCompletion={profileCompletion}
 						recentPostsLast7Days={recentPostsLast7Days}
 						averageLikes={averageLikes}
@@ -204,7 +244,7 @@ export default function Studio() {
 	}
 
 	return (
-		<StudioLayout profileName={profile?.clone_name}>
+		<StudioLayout profileName={effectiveProfile?.clone_name}>
 			<motion.div
 				key={segment}
 				initial={{ opacity: 0, y: 8 }}

@@ -10,6 +10,10 @@ const frontendEnvSchema = z.object({
 	VITE_CONTENT_PUBLISHING_ADDRESS: addressSchema.optional(),
 	VITE_REWARD_DISTRIBUTOR_ADDRESS: addressSchema.optional(),
 	VITE_WALLETCONNECT_PROJECT_ID: z.string().optional(),
+	VITE_TEST_BYPASS_WALLET_LOGIN: z
+		.enum(["true", "false"])
+		.optional()
+		.default("false"),
 });
 
 const parsedFrontendEnv = frontendEnvSchema.safeParse(import.meta.env);

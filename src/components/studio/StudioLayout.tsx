@@ -54,6 +54,7 @@ export function StudioLayout({ children, profileName }: StudioLayoutProps) {
 									variant="outline"
 									size="icon"
 									className="md:hidden"
+									aria-label="Open studio navigation"
 									onClick={() => setMobileSidebarOpen(true)}
 								>
 									<Menu className="h-4 w-4" />

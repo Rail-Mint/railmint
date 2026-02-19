@@ -1,528 +1,324 @@
 # RailMint
 
-A decentralized platform for AI-powered creator clones on the BNB Chain. This project enables creators to register, publish content, and earn rewards through community engagement.
+RailMint is a proof-carrying creator platform on BNB Chain testnet. Creators onboard with a wallet, publish AI-assisted content, receive community engagement, and earn epoch rewards. Critical actions produce real onchain transactions, then persist metadata in Supabase.
 
-## Overview
+## What RailMint does
 
-RailMint is a full-stack Web3 application that combines:
-- **Smart Contracts**: Secure blockchain infrastructure on BSC Testnet
-- **Frontend**: Modern React application with Web3 wallet integration
-- **AI Integration**: Creator content management and distribution system
+- Wallet-based creator onboarding linked to X identity.
+- Onchain-backed post publishing and mention-triggered publishing.
+- Community feed, likes, leaderboard, and rewards views.
+- Epoch payout and donation transaction tracking with explorer proofs.
+- Hybrid architecture: React frontend + Solidity contracts + Supabase edge functions.
 
-## Features
+## How RailMint works
 
-- Creator registration with X handle and profile management
-- Content publishing with IPFS storage
-- Community voting (likes) on content
-- Epoch-based reward distribution system
-- Web3 wallet integration via RainbowKit + Wagmi
+### Core components
 
-## Onchain Proof Matrix
+- `CreatorRegistry.sol`: creator registration and creator profile state.
+- `ContentManager.sol`: content publishing and like/unlike logic.
+- `RewardDistributor.sol`: epoch creation, reward distribution, reward claiming.
+- Frontend (`src/`): wallet UX, route pages, transaction flow, explorer linking.
+- Supabase Edge Functions (`supabase/functions/*`): AI generation, X mention ingestion/processing, payouts, and automation.
 
-RailMint now runs in strict onchain mode for proof-carrying actions. If signing keys or RPC configuration are missing, the action fails instead of generating simulated transaction hashes.
+### High-level flow
 
-| Flow | Execution Path | Proof Artifact | Verification |
-| --- | --- | --- | --- |
-| Creator onboarding | Wallet signs onchain registration via `CreatorRegistry.registerCreator` | Wallet tx hash | BSC testnet explorer link in onboarding success state |
-| AI post generation | `supabase/functions/generate-post` submits a real BSC testnet transaction before persisting post | `posts.commit_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
-| Mention-triggered publish | `supabase/functions/process-mention` submits a real BSC testnet transaction before writing post | `posts.commit_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
-| Donation transfer | `supabase/functions/process-mention` sends native BNB transfer via signer wallet | `donations.tx_hash` + audit log `submitted` event | `https://testnet.bscscan.com/tx/<hash>` |
-| Epoch payout trigger | `supabase/functions/trigger-payout` sends transaction using payout signer before marking epoch paid | `epochs.payout_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
+1. User connects wallet and completes onboarding.
+2. Creator is registered onchain, mirrored in Supabase profile tables.
+3. Content publish requests create proof-bearing transaction(s), then persist post records.
+4. Community engagement updates feed and rankings.
+5. Epoch close + payout paths execute onchain and persist tx hashes.
 
-## Reproducible E2E Demo
+### Flow diagrams
 
-Use this sequence to produce verifiable proofs end-to-end.
-
-1. Configure app and edge-function environment variables:
-
-```env
-# Frontend
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_PUBLISHABLE_KEY=...
-VITE_BLOCKCHAIN_EXPLORER_BASE_URL=https://testnet.bscscan.com
-VITE_CREATOR_REGISTRY_ADDRESS=0x...
-VITE_CONTENT_PUBLISHING_ADDRESS=0x...
-VITE_VOTING_SYSTEM_ADDRESS=0x...
-VITE_REWARD_DISTRIBUTOR_ADDRESS=0x...
-
-# Edge functions (Supabase secrets)
-BNB_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
-BNB_TESTNET_EXPLORER_URL=https://testnet.bscscan.com
-BNB_TESTNET_PRIVATE_KEY=0x...
-DONATION_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
-DONATION_SIGNER_PRIVATE_KEY=0x...
-PAYOUT_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
-PAYOUT_SIGNER_PRIVATE_KEY=0x...
-OPENROUTER_API_KEY=...
-OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EMBEDDINGS_API_URL=https://openrouter.ai/api/v1/embeddings
-UPLOAD_POST_BASE_URL=https://api.upload-post.com/api
-TWEETIO_BASE_URL=https://api.twitterapi.io
-POST_URL_BASE=https://railmint.com/post
-PLAYWRIGHT_BASE_URL=http://localhost:8080
-```
-
-2. Install and run:
-
-```bash
-npm install
-npm run hardhat:compile
-npm run hardhat:deploy:bsc
-npm run dev
-```
-
-3. Perform proof-producing actions:
-   - Complete creator onboarding with wallet connected.
-   - Generate and publish a post.
-   - Execute a mention-triggered publish.
-   - Send a donation command and confirm transfer.
-   - Trigger payout for a closed epoch.
-
-4. Verify proofs:
-   - Open every tx hash from app UI or DB fields (`posts.commit_tx_hash`, `donations.tx_hash`, `epochs.payout_tx_hash`) on BSC testnet explorer.
-   - Confirm no simulated statuses exist in `donations` or `donation_audit_log`.
-
-## How It Works
-
-### System Architecture
-
-RailMint is a decentralized platform where AI-powered creators can register, publish content, and earn rewards based on community engagement. The system operates through three main smart contracts working together:
-
-```mermaid
-graph TB
-    User[User with Web3 Wallet] --> Frontend[React Frontend + RainbowKit]
-    Frontend --> Wagmi[Wagmi/Viem SDK]
-    Wagmi --> CreatorRegistry[CreatorRegistry Contract]
-    Wagmi --> ContentManager[ContentManager Contract]
-    Wagmi --> RewardDistributor[RewardDistributor Contract]
-    
-    CreatorRegistry --> |Stores| CreatorData[(Creator Data:<br/>X Handle, Profile Hash,<br/>Wallet Address)]
-    ContentManager --> |References| CreatorRegistry
-    ContentManager --> |Stores| ContentData[(Content Data:<br/>IPFS URI, Content Hash,<br/>Like Count)]
-    RewardDistributor --> |References| CreatorRegistry
-    RewardDistributor --> |Manages| RewardPool[(Reward Pool:<br/>BNB Deposits,<br/>Pending Rewards)]
-    
-    ContentManager --> IPFS[IPFS Network]
-    Frontend --> Supabase[Supabase Database]
-```
-
-### User Flow
-
-#### 1. Creator Registration
-When a user wants to become a creator:
-1. User connects their Web3 wallet (MetaMask, etc.) via RainbowKit
-2. User provides their X (Twitter) handle and profile information
-3. Frontend generates a profile hash (keccak256 of profile data)
-4. Frontend calls `CreatorRegistry.registerCreator(xHandle, profileHash)`
-5. Smart contract stores the creator data and maps their wallet address
-6. Emits `CreatorRegistered` event with creator ID
+#### 1) Creator onboarding
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant F as Frontend
+    participant U as User Wallet
+    participant FE as Frontend (/onboarding)
     participant CR as CreatorRegistry
-    participant BC as BSC Testnet
-    
-    U->>F: Connect Wallet
-    F->>U: Request X Handle & Profile
-    U->>F: Submit Info
-    F->>F: Generate Profile Hash
-    F->>CR: registerCreator(xHandle, profileHash)
-    CR->>CR: Validate X handle (1-20 chars)
-    CR->>CR: Check wallet not registered
-    CR->>CR: Store creator data
-    CR->>BC: Emit CreatorRegistered Event
-    CR-->>F: Return Creator ID
-    F-->>U: Registration Complete
+    participant SB as Supabase
+
+    U->>FE: Connect wallet + submit X handle/profile
+    FE->>CR: registerCreator(...)
+    CR-->>FE: tx hash + creator id
+    FE->>SB: upsert creator profile + metadata
+    FE-->>U: Onboarding success + explorer proof
 ```
 
-#### 2. Content Publishing
-Registered creators can publish content:
-1. Creator prepares content (text, media, etc.)
-2. Content is uploaded to IPFS, returning an IPFS URI
-3. Frontend generates content hash (keccak256 of content)
-4. Frontend calls `ContentManager.publishContent(creatorId, contentHash, ipfsUri)`
-5. Contract verifies creator is registered and active
-6. Content is stored with reference to the creator
-7. Emits `ContentPublished` event
+#### 2) Content publishing
 
 ```mermaid
 sequenceDiagram
     participant C as Creator
-    participant F as Frontend
-    participant IPFS as IPFS Network
+    participant FE as Frontend/Studio
+    participant GP as generate-post/create-post fn
     participant CM as ContentManager
-    participant BC as BSC Testnet
-    
-    C->>F: Create Content
-    F->>IPFS: Upload Content
-    IPFS-->>F: Return IPFS URI
-    F->>F: Generate Content Hash
-    F->>CM: publishContent(creatorId, contentHash, ipfsUri)
-    CM->>CM: Verify creator exists & active
-    CM->>CM: Store content data
-    CM->>BC: Emit ContentPublished Event
-    CM-->>F: Return Content ID
-    F-->>C: Content Published
+    participant SB as Supabase
+
+    C->>FE: Draft content
+    FE->>GP: Request publish
+    GP->>CM: publish tx on BSC testnet
+    CM-->>GP: tx hash
+    GP->>SB: insert post with commit_tx_hash
+    GP-->>FE: publish result
 ```
 
-#### 3. Community Voting (Likes)
-Community members can like content:
-1. User views content on the frontend
-2. User clicks "Like" button
-3. Frontend calls `ContentManager.likeContent(contentId)`
-4. Contract checks user hasn't already liked this content
-5. Contract increments the like count
-6. Emits `ContentLiked` event
-7. To unlike, user calls `unlikeContent(contentId)`
-
-**Important**: One wallet = one vote per content. Users cannot like their own content multiple times.
+#### 3) Mention-triggered publish
 
 ```mermaid
 sequenceDiagram
-    participant U as User
-    participant F as Frontend
+    participant X as X mention stream
+    participant SX as sync-x-mentions fn
+    participant PM as process-mention fn
     participant CM as ContentManager
-    participant BC as BSC Testnet
-    
-    U->>F: View Content
-    U->>F: Click Like
-    F->>CM: likeContent(contentId)
-    CM->>CM: Check user hasn't liked
-    CM->>CM: Increment like count
-    CM->>BC: Emit ContentLiked Event
-    CM-->>F: Success
-    F-->>U: Like Recorded
+    participant SB as Supabase
+
+    X->>SX: New mention payload
+    SX->>PM: Queue/process mention
+    PM->>CM: submit publish tx
+    CM-->>PM: tx hash
+    PM->>SB: persist post + intent audit
 ```
 
-#### 4. Reward Distribution System
-Rewards are distributed in epochs (time periods):
-
-**Creating an Epoch (Admin Only):**
-1. Admin calls `RewardDistributor.createEpoch(startTime, endTime)` with BNB
-2. Contract creates new epoch with reward pool
-3. Epoch is active during the specified time period
-
-**Distributing Rewards (Admin Only):**
-1. After epoch ends, admin analyzes creator performance (likes, engagement)
-2. Admin calls `distributeRewards(epochId, creatorIds[], amounts[])`
-3. Contract validates arrays match in length
-4. Contract marks rewards as pending for each creator
-5. Emits `RewardsDistributed` event
-
-**Claiming Rewards (Creators):**
-1. Creator checks pending rewards via `getPendingReward(creatorId)`
-2. Creator calls `claimReward(creatorId)`
-3. Contract transfers BNB to creator's wallet
-4. Emits `RewardClaimed` event
+#### 4) Donation + payout transactions
 
 ```mermaid
 sequenceDiagram
-    participant A as Admin
-    participant F as Frontend
-    participant RD as RewardDistributor
-    participant C as Creator
-    participant BC as BSC Testnet
-    
-    rect rgb(200, 230, 255)
-        Note over A,BC: Epoch Creation
-        A->>F: Create Epoch (start, end, BNB amount)
-        F->>RD: createEpoch(startTime, endTime) + BNB
-        RD->>RD: Store epoch data
-        RD->>BC: Emit EpochCreated Event
-    end
-    
-    rect rgb(255, 230, 200)
-        Note over A,BC: Reward Distribution
-        A->>F: Distribute Rewards
-        F->>RD: distributeRewards(epochId, creators[], amounts[])
-        RD->>RD: Validate arrays
-        RD->>RD: Update pending rewards
-        RD->>BC: Emit RewardsDistributed Event
-    end
-    
-    rect rgb(200, 255, 200)
-        Note over C,BC: Reward Claiming
-        C->>F: Check Pending Rewards
-        F->>RD: getPendingReward(creatorId)
-        RD-->>F: Return Amount
-        C->>F: Claim Rewards
-        F->>RD: claimReward(creatorId)
-        RD->>RD: Transfer BNB
-        RD->>BC: Emit RewardClaimed Event
-        RD-->>F: Success
-        F-->>C: Rewards Received
-    end
+    participant X as Mention/Command
+    participant PM as process-mention fn
+    participant TP as trigger-payout fn
+    participant BC as BSC testnet
+    participant SB as Supabase
+
+    X->>PM: Donation intent
+    PM->>BC: send BNB transfer tx
+    BC-->>PM: donation tx hash
+    PM->>SB: donations + donation_audit_log
+
+    TP->>BC: payout tx for closed epoch
+    BC-->>TP: payout tx hash
+    TP->>SB: update epochs.payout_tx_hash
 ```
 
-### Data Flow Summary
+#### 5) Rewards + leaderboard lifecycle
 
 ```mermaid
 flowchart LR
-    subgraph Frontend
-        UI[React UI]
-        RK[RainbowKit]
-        Wagmi[Wagmi Hooks]
-    end
-    
-    subgraph Blockchain[BSC Testnet]
-        CR[CreatorRegistry<br/>- Registration<br/>- Profile Management]
-        CM[ContentManager<br/>- Content Publishing<br/>- Voting System]
-        RD[RewardDistributor<br/>- Epoch Management<br/>- Reward Distribution]
-    end
-    
-    subgraph Storage
-        IPFS[IPFS<br/>Content Storage]
-        SB[Supabase<br/>Metadata & Cache]
-    end
-    
-    UI --> RK
-    RK --> Wagmi
-    Wagmi --> CR
-    Wagmi --> CM
-    Wagmi --> RD
-    CM --> IPFS
-    UI --> SB
+    A[Community likes + activity] --> E[Epoch metrics in Supabase]
+    E --> CE[close-epoch fn]
+    CE --> RD[RewardDistributor contract]
+    RD --> P[Pending creator rewards]
+    P --> UI[/rewards page]
+    UI --> Claim[Creator claims reward onchain]
 ```
 
-### Smart Contract Interactions
+### Routes
 
-The three contracts work together through interfaces:
+- `/` home
+- `/onboarding`
+- `/feed`
+- `/post/:id`
+- `/leaderboard`
+- `/rewards`
+- `/studio/*`
+- `/studio/oauth-callback`
 
-1. **CreatorRegistry** (Standalone): Manages creator registration and profiles
-   - `registerCreator()` - New creator signup
-   - `getCreator()` - Fetch creator details
-   - `updateProfile()` - Update creator info
+## Prerequisites
 
-2. **ContentManager** (Uses CreatorRegistry): Manages content and voting
-   - `publishContent()` - Create new content
-   - `likeContent()` / `unlikeContent()` - Voting
-   - Verifies creators through CreatorRegistry interface
-
-3. **RewardDistributor** (Uses CreatorRegistry): Manages reward epochs
-   - `createEpoch()` - Start new reward period (admin)
-   - `distributeRewards()` - Assign rewards (admin)
-   - `claimReward()` - Creators claim earnings
-   - References creators through CreatorRegistry
-
-```mermaid
-graph LR
-    CR[CreatorRegistry] --> |Interface| CM[ContentManager]
-    CR --> |Interface| RD[RewardDistributor]
-    
-    subgraph Dependencies
-        direction TB
-        CM -.->|Checks creator| CR
-        RD -.->|Validates creator| CR
-    end
-```
-
-### Security Features
-
-- **Access Control**: OpenZeppelin's `Ownable` for admin functions
-- **Reentrancy Protection**: `ReentrancyGuard` on state-changing functions
-- **Input Validation**: All inputs validated (X handle length, non-empty data)
-- **One Vote Per Wallet**: Mapping prevents multiple likes from same wallet
-- **Safe Transfers**: BNB transfers use `call{value:}()` pattern
-
-## Tech Stack
-
-### Frontend
-- **Vite** - Build tool
-- **React 18** - UI framework
-- **TypeScript** - Type safety
-- **Tailwind CSS** - Styling
-- **shadcn/ui** - Component library
-- **Radix UI** - Headless UI primitives
-- **Framer Motion** - Animations
-
-### Blockchain
-- **Hardhat** - Smart contract development
-- **OpenZeppelin Contracts** - Security standards
-- **Wagmi** - React hooks for Ethereum
-- **Viem** - Ethereum library
-- **RainbowKit** - Wallet connection UI
-
-### Backend & Storage
-- **Supabase** - Database and auth
-- **IPFS** - Decentralized content storage
-
-### Smart Contracts
-- **CreatorRegistry.sol** - Creator registration and profile management
-- **ContentManager.sol** - Content publishing and voting
-- **RewardDistributor.sol** - Epoch-based reward distribution
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
+- Node.js 18+ (recommended 20+)
+- npm
 - Git
-- MetaMask or other Web3 wallet
+- Wallet (MetaMask or equivalent)
+- BNB testnet funds for deploy/signer wallets
+- Optional for E2E: Bun (current Playwright webServer command uses `bun run dev` in `playwright.config.ts`)
 
-### Installation
+## Install the repo
 
-1. Clone the repository:
 ```bash
 git clone https://github.com/Rail-Mint/railmint
 cd railmint
-```
-
-2. Install dependencies:
-```bash
 npm install
 ```
 
-3. Set up environment variables:
+## Environment setup
+
+Use the project template:
+
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 
-Edit `.env` and add your configuration:
-```env
-# Supabase
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+Fill required values in `.env.local`.
 
-# Explorer links
-VITE_BLOCKCHAIN_EXPLORER_BASE_URL=https://testnet.bscscan.com
+### Minimum for frontend app boot
 
-# Smart Contract Addresses (after deployment)
-VITE_CREATOR_REGISTRY_ADDRESS=0x...
-VITE_CONTENT_PUBLISHING_ADDRESS=0x...
-VITE_VOTING_SYSTEM_ADDRESS=0x...
-VITE_REWARD_DISTRIBUTOR_ADDRESS=0x...
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
+- `VITE_BLOCKCHAIN_EXPLORER_BASE_URL`
+- `VITE_WALLETCONNECT_PROJECT_ID`
 
-# Edge functions
-BNB_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
-BNB_TESTNET_EXPLORER_URL=https://testnet.bscscan.com
-OPENROUTER_API_KEY=...
-OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
-OPENROUTER_EMBEDDINGS_API_URL=https://openrouter.ai/api/v1/embeddings
-UPLOAD_POST_BASE_URL=https://api.upload-post.com/api
-TWEETIO_BASE_URL=https://api.twitterapi.io
-POST_URL_BASE=https://railmint.com/post
+### Studio testing bypass (optional)
 
-# E2E tests
-PLAYWRIGHT_BASE_URL=http://localhost:8080
-```
+- `VITE_TEST_BYPASS_WALLET_LOGIN=true` to bypass Studio wallet gate for UI automation.
+- Intended for local testing only; keep `false` in normal/dev/prod usage.
 
-Frontend env variables are validated centrally in `src/lib/env.ts`, and Supabase Edge Function env values are read through `supabase/functions/_shared/env.ts`.
+### Minimum for contract deploy
 
-4. Start the development server:
+- `BSC_TESTNET_RPC_URL`
+- `TESTNET_PRIVATE_KEY`
+
+### Minimum for contract verification
+
+- `BSC_SCAN_API_KEY` (needed for `hardhat verify`)
+
+### Minimum for proof-carrying edge flows
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `BNB_TESTNET_RPC_URL`
+- `BNB_TESTNET_EXPLORER_URL`
+- `BNB_TESTNET_PRIVATE_KEY`
+- `OPENROUTER_API_KEY`
+- `OPENROUTER_API_URL`
+- `OPENROUTER_EMBEDDINGS_API_URL`
+- `POST_URL_BASE`
+
+Additional integrations (X, Upload-Post, payouts, tuning knobs) are documented in `.env.example`.
+
+## Local development
+
 ```bash
 npm run dev
 ```
 
-## Smart Contract Development
+Default app URL: `http://localhost:8080`
 
-### Compile Contracts
+## Smart contracts
+
+Compile:
+
 ```bash
 npm run hardhat:compile
 ```
 
-### Deploy to Testnet
+Deploy to BSC testnet:
 
-**BSC Testnet:**
 ```bash
 npm run hardhat:deploy:bsc
 ```
 
-### Test Contracts
+After deployment, copy contract addresses into `.env.local`:
+
+- `VITE_CREATOR_REGISTRY_ADDRESS`
+- `VITE_CONTENT_PUBLISHING_ADDRESS` (ContentManager address)
+- `VITE_REWARD_DISTRIBUTOR_ADDRESS`
+
+Verify (requires `BSC_SCAN_API_KEY`):
+
 ```bash
-npm run hardhat:test
+npx hardhat verify --network bscTestnet <address> [constructor_args...]
 ```
 
-## Available Scripts
+## Reproducible E2E proof flow
 
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run preview` - Preview production build
-- `npm run lint` - Run ESLint
-- `npm run test` - Run tests (Vitest)
-- `npm run test:watch` - Run tests in watch mode
-- `npm run hardhat:compile` - Compile smart contracts
-- `npm run hardhat:test` - Run contract tests
+This sequence is intended for reproducibility and tx-hash verification.
 
-## Project Structure
+1. Prepare env values in `.env.local` (frontend + edge + chain keys).
+2. Compile and deploy contracts to BSC testnet.
+3. Update frontend contract address envs from deployment output.
+4. Start app:
 
-```
-├── contracts/           # Solidity smart contracts
-│   ├── CreatorRegistry.sol
-│   ├── ContentManager.sol
-│   └── RewardDistributor.sol
-├── scripts/            # Deployment scripts
-│   └── deploy.ts
-├── src/
-│   ├── components/     # React components
-│   ├── hooks/         # Custom React hooks
-│   ├── lib/           # Utility functions
-│   ├── pages/         # Page components
-│   └── App.tsx
-├── docs/              # Documentation
-│   ├── smart-contracts-deployment.md
-│   └── smart-contracts-frontend-integration.md
-└── hardhat.config.cjs # Hardhat configuration
+```bash
+npm run dev
 ```
 
-## Network Configuration
+5. Execute proof-producing actions:
+   - Onboard creator with wallet.
+   - Publish content from app/studio flow.
+   - Trigger mention-driven publish (if X pipeline configured).
+   - Trigger donation/payout paths if configured.
+6. Verify tx hashes in explorer links from UI or DB fields:
+   - `posts.commit_tx_hash`
+   - `donations.tx_hash`
+   - `epochs.payout_tx_hash`
 
-### BSC Testnet
-- **Chain ID**: 97
-- **RPC**: https://data-seed-prebsc-1-s1.binance.org:8545
-- **Explorer**: https://testnet.bscscan.com
-- **Faucet**: https://testnet.bnbchain.org/faucet-smart
+## E2E/UI testing notes
 
-## Documentation
+- Unit tests:
 
-For detailed information:
+```bash
+npm run test
+```
 
-- [Smart Contract Deployment Guide](docs/smart-contracts-deployment.md)
-- [Frontend Integration Guide](docs/smart-contracts-frontend-integration.md)
-- [Smart Contracts Summary](docs/smart-contracts-summary.md)
+- Playwright config requires `PLAYWRIGHT_BASE_URL`.
+- Current Playwright web server command is `bun run dev`; install Bun or adjust `playwright.config.ts` to `npm run dev`.
 
-## Key Features
+### Real wallet E2E lane (Synpress + Playwright)
 
-### Creator Registration
-- Register with X handle and profile hash
-- Wallet-to-creator mapping
-- Profile update and deactivation
+Use this lane to test true MetaMask extension login/sign flows (not bypass mode).
 
-### Content Publishing
-- Publish content with IPFS URI
-- Content hash verification
-- Like/unlike functionality (one vote per wallet)
+```bash
+npm install
+npx playwright install chromium
 
-### Reward System
-- Epoch-based reward distribution
-- BNB reward pool management
-- Batch reward distribution
-- Claim pending rewards
+# optional: copy wallet env template
+cp .env.wallet.example .env.wallet
 
-## Security
+# build deterministic wallet cache
+npm run e2e:wallet:cache
 
-- OpenZeppelin security libraries (Ownable, ReentrancyGuard)
-- Access control on admin functions
-- Input validation
-- Checks-Effects-Interactions pattern
-- Reentrancy protection
+# run wallet lane (local chain)
+npm run e2e:wallet:local
 
-## Contributing
+# run wallet lane (testnet)
+npm run e2e:wallet:testnet
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+Key files:
+
+- `playwright.wallet.config.ts`
+- `test/wallet-setup/basic.setup.ts`
+- `tests/wallet/studio-wallet-login.spec.ts`
+- `tests/wallet/README.md`
+
+## Useful scripts
+
+- `npm run dev`
+- `npm run build`
+- `npm run preview`
+- `npm run lint`
+- `npm run test`
+- `npm run test:watch`
+- `npm run e2e:ui`
+- `npm run e2e:wallet:cache`
+- `npm run e2e:wallet`
+- `npm run e2e:wallet:local`
+- `npm run e2e:wallet:testnet`
+- `npm run e2e:wallet:headless`
+- `npm run hardhat:compile`
+- `npm run hardhat:test`
+- `npm run hardhat:deploy:bsc`
+
+## Project structure
+
+```text
+contracts/                 Solidity contracts
+scripts/                   Deployment scripts
+src/                       React app
+supabase/functions/        Edge functions and automations
+hardhat.config.cjs         Hardhat networks + verify config
+playwright.config.ts       E2E config
+.env.example               Canonical environment template
+```
+
+## Troubleshooting
+
+- WalletConnect 400/403 errors: set a valid `VITE_WALLETCONNECT_PROJECT_ID`.
+- Deploy network missing: set `BSC_TESTNET_RPC_URL` and `TESTNET_PRIVATE_KEY`.
+- Verify failing: set `BSC_SCAN_API_KEY`.
+- Feed empty: ensure Supabase URL/key and data pipeline are configured.
 
 ## License
 
 MIT
-
-## Resources
-
-- [Hardhat Documentation](https://hardhat.org/docs)
-- [OpenZeppelin Documentation](https://docs.openzeppelin.com/)
-- [Wagmi Documentation](https://wagmi.sh/)
-- [BNB Chain Documentation](https://docs.bnbchain.org/)

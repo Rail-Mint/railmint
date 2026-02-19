@@ -115,6 +115,9 @@ export function StudioSidebar({ collapsed, onToggle }: StudioSidebarProps) {
 					variant="ghost"
 					size="icon"
 					onClick={onToggle}
+					aria-label={
+						collapsed ? "Expand studio sidebar" : "Collapse studio sidebar"
+					}
 					title={collapsed ? "Expand panel" : "Collapse panel"}
 					className="h-12 w-12 rounded-xl bg-primary/5 text-primary border border-primary/20 hover:bg-primary/15 hover:border-primary/40 hover:shadow-md transition-all duration-200 hover:-translate-y-0.5"
 				>

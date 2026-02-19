@@ -67,10 +67,15 @@ const App = () => (
 					<TooltipProvider>
 						<Toaster />
 						<Sonner />
-						<BrowserRouter>
+						<BrowserRouter
+							future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+						>
 							<Suspense fallback={<RouteFallback />}>
 								<Routes>
-									<Route path="/studio/oauth-callback" element={<StudioOAuthCallback />} />
+									<Route
+										path="/studio/oauth-callback"
+										element={<StudioOAuthCallback />}
+									/>
 									<Route path="/studio/*" element={<Studio />} />
 									<Route element={<AppLayout />}>
 										<Route path="/" element={<Index />} />
