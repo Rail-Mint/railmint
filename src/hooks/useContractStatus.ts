@@ -1,9 +1,9 @@
 import {
-	CREATOR_REGISTRY_ADDRESS,
 	CONTENT_MANAGER_ADDRESS,
-	REWARD_DISTRIBUTOR_ADDRESS,
-	isContractDeployed,
+	CREATOR_REGISTRY_ADDRESS,
 	getContractMode,
+	isContractDeployed,
+	REWARD_DISTRIBUTOR_ADDRESS,
 } from "@/lib/contracts";
 
 export function useContractStatus() {
@@ -20,6 +20,6 @@ export function useContractStatus() {
 		registryDeployed,
 		contentDeployed,
 		rewardDeployed,
-		networkLabel: allDeployed ? "BSC Testnet" : "Mock Mode",
+		networkLabel: allDeployed ? "BSC Testnet" : "Contracts Unavailable",
 	};
 }

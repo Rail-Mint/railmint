@@ -40,7 +40,6 @@ CREATE TABLE public.posts (
   content_hash TEXT NOT NULL,
   meta_hash TEXT NOT NULL,
   commit_tx_hash TEXT,
-  is_fallback BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

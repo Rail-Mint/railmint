@@ -1,29 +1,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-	createPublicClient,
 	createWalletClient,
 	defineChain,
 	http,
 	keccak256,
 	toBytes,
-	toHex,
 	verifyMessage,
 } from "https://esm.sh/viem@2.21.0";
 import { privateKeyToAccount } from "https://esm.sh/viem@2.21.0/accounts";
+import { getRequiredEnv, getSupabaseUrl } from "../_shared/env.ts";
 
-// BNB Testnet configuration
-const bscTestnet = defineChain({
-	id: 97,
-	name: "BSC Testnet",
-	nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-	rpcUrls: {
-		default: { http: ["https://data-seed-prebsc-1-s1.binance.org:8545"] },
-	},
-	blockExplorers: {
-		default: { name: "BscScan", url: "https://testnet.bscscan.com" },
-	},
-	testnet: true,
-});
+function createBscTestnetChain(rpcUrl: string, explorerUrl: string) {
+	return defineChain({
+		id: 97,
+		name: "BSC Testnet",
+		nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
+		rpcUrls: {
+			default: { http: [rpcUrl] },
+		},
+		blockExplorers: {
+			default: { name: "BscScan", url: explorerUrl },
+		},
+		testnet: true,
+	});
+}
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -134,8 +134,8 @@ Deno.serve(async (req: Request) => {
 		}
 
 		const supabase = createClient(
-			Deno.env.get("SUPABASE_URL")!,
-			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+			getSupabaseUrl(),
+			getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
 		);
 
 		// Get the creator
@@ -244,42 +244,37 @@ Deno.serve(async (req: Request) => {
 				: baseSystemPrompt;
 
 		let contentText: string;
-		let isFallback = false;
 		const modelVersion = "google/gemini-2.5-flash";
 
 		// Try AI generation via OpenRouter with timeout
-		const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-		if (!OPENROUTER_API_KEY)
-			throw new Error("OPENROUTER_API_KEY is not configured");
+		const OPENROUTER_API_KEY = getRequiredEnv("OPENROUTER_API_KEY");
+		const OPENROUTER_API_URL = getRequiredEnv("OPENROUTER_API_URL");
 
 		// Create abort controller for timeout
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
 		try {
-			const aiRes = await fetch(
-				"https://openrouter.ai/api/v1/chat/completions",
-				{
-					method: "POST",
-					signal: controller.signal,
-					headers: {
-						Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-						"Content-Type": "application/json",
-						"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
-						"X-Title": "RailMintAI",
-					},
-					body: JSON.stringify({
-						model: modelVersion,
-						messages: [
-							{
-								role: "system",
-								content: systemPrompt,
-							},
-							{ role: "user", content: promptText },
-						],
-					}),
+			const aiRes = await fetch(OPENROUTER_API_URL, {
+				method: "POST",
+				signal: controller.signal,
+				headers: {
+					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+					"Content-Type": "application/json",
+					"HTTP-Referer": getSupabaseUrl(),
+					"X-Title": "RailMintAI",
 				},
-			);
+				body: JSON.stringify({
+					model: modelVersion,
+					messages: [
+						{
+							role: "system",
+							content: systemPrompt,
+						},
+						{ role: "user", content: promptText },
+					],
+				}),
+			});
 
 			if (!aiRes.ok) {
 				console.error("AI error:", aiRes.status, await aiRes.text());
@@ -294,9 +289,8 @@ Deno.serve(async (req: Request) => {
 		} catch (aiErr) {
 			clearTimeout(timeoutId);
 			const errorMsg = aiErr instanceof Error ? aiErr.message : "Unknown error";
-			console.error("AI generation failed, using fallback:", errorMsg);
-			isFallback = true;
-			contentText = `[${creatorData.clone_name}] The BNB Chain ecosystem continues to evolve with exciting developments in ${topic}. As a growing network supporting thousands of dApps, BNB Chain remains a key player in the blockchain space. Developers and users alike are benefiting from low transaction fees, fast confirmation times, and a robust infrastructure. The community's commitment to innovation ensures BNB Chain stays at the forefront of Web3 adoption. Stay tuned for more updates as the ecosystem expands.`;
+			console.error("AI generation failed:", errorMsg);
+			throw new Error(`AI generation failed: ${errorMsg}`);
 		}
 
 		// Compute hashes
@@ -325,43 +319,26 @@ Deno.serve(async (req: Request) => {
 					creatorData.wallet_address,
 			),
 		);
-		let commitTxHash: string;
-		const bnbPrivateKey = Deno.env.get("BNB_TESTNET_PRIVATE_KEY");
+		const bnbPrivateKey = getRequiredEnv("BNB_TESTNET_PRIVATE_KEY");
+		const rpcUrl = getRequiredEnv("BNB_TESTNET_RPC_URL");
+		const explorerUrl = getRequiredEnv("BNB_TESTNET_EXPLORER_URL");
+		const bscTestnet = createBscTestnetChain(rpcUrl, explorerUrl);
 
-		if (bnbPrivateKey) {
-			try {
-				const account = privateKeyToAccount(
-					(bnbPrivateKey.startsWith("0x")
-						? bnbPrivateKey
-						: `0x${bnbPrivateKey}`) as `0x${string}`,
-				);
-				const publicClient = createPublicClient({
-					chain: bscTestnet,
-					transport: http(),
-				});
-				const walletClient = createWalletClient({
-					account,
-					chain: bscTestnet,
-					transport: http(),
-				});
-				const hash = await walletClient.sendTransaction({
-					to: account.address,
-					value: 0n,
-				});
-				commitTxHash = hash;
-				console.log(`Real BNB tx: ${hash}`);
-			} catch (txErr) {
-				console.error(
-					"BNB tx failed, using fallback hash:",
-					txErr instanceof Error ? txErr.message : "unknown",
-				);
-				commitTxHash = keccak256(toBytes("tx-fallback-" + postId));
-			}
-		} else {
-			commitTxHash = keccak256(
-				toBytes("mock-commit-" + postId + "-" + Date.now()),
-			);
-		}
+		const account = privateKeyToAccount(
+			(bnbPrivateKey.startsWith("0x")
+				? bnbPrivateKey
+				: `0x${bnbPrivateKey}`) as `0x${string}`,
+		);
+		const walletClient = createWalletClient({
+			account,
+			chain: bscTestnet,
+			transport: http(rpcUrl),
+		});
+		const commitTxHash = await walletClient.sendTransaction({
+			to: account.address,
+			value: 0n,
+		});
+		console.log(`Real BNB tx: ${commitTxHash}`);
 
 		const { error: insertErr } = await supabase.from("posts").insert({
 			id: postId,
@@ -373,7 +350,6 @@ Deno.serve(async (req: Request) => {
 			content_hash: contentHash,
 			meta_hash: metaHash,
 			commit_tx_hash: commitTxHash,
-			is_fallback: isFallback,
 			created_at: createdAt,
 		});
 

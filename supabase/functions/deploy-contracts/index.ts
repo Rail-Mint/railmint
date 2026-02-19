@@ -1,125 +1,131 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  createWalletClient,
-  createPublicClient,
-  http,
-  defineChain,
-} from "npm:viem@2.45.3";
-import { privateKeyToAccount } from "npm:viem@2.45.3/accounts";
+	type Abi,
+	createPublicClient,
+	createWalletClient,
+	formatEther,
+	type Hex,
+	http,
+} from "https://esm.sh/viem@2.38.5";
+import { privateKeyToAccount } from "https://esm.sh/viem@2.38.5/accounts";
+import { bscTestnet } from "https://esm.sh/viem@2.38.5/chains";
+import { requireAdmin } from "../_shared/admin-auth.ts";
+import {
+	getOptionalEnv,
+	getServiceRoleKey,
+	getSupabaseUrl,
+} from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+	parseJsonBody,
+} from "../_shared/http.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+type DeployRequest = {
+	step?: "balance" | "deploy" | string;
+	abi?: unknown;
+	bytecode?: string;
+	args?: unknown[];
+	name?: string;
 };
 
-const bscTestnet = defineChain({
-  id: 97,
-  name: "BSC Testnet",
-  nativeCurrency: { name: "tBNB", symbol: "tBNB", decimals: 18 },
-  rpcUrls: {
-    default: { http: ["https://data-seed-prebsc-1-s1.binance.org:8545"] },
-  },
-  blockExplorers: {
-    default: { name: "BscScan", url: "https://testnet.bscscan.com" },
-  },
-  testnet: true,
-});
-
-async function requireAdmin(req: Request): Promise<string> {
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
-  const apikey = req.headers.get("apikey")?.trim();
-
-  if (serviceRoleKey && (auth === serviceRoleKey || apikey === serviceRoleKey)) {
-    return "system";
-  }
-
-  if (!auth) throw new Error("Unauthorized");
-
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-
-  const { data: { user }, error } = await supabase.auth.getUser(auth);
-  if (error || !user) throw new Error("Unauthorized");
-
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "admin")
-    .single();
-
-  if (!roles) throw new Error("Admin access required");
-  return user.id;
+function authStatus(message: string): number {
+	if (message === "Unauthorized" || message === "Forbidden") return 403;
+	return 400;
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    try {
-      await requireAdmin(req);
-    } catch (e) {
-      return json({ error: e instanceof Error ? e.message : "Unauthorized" }, 403);
-    }
-
-    const body = await req.json().catch(() => ({}));
-    const step = body.step || "balance";
-
-    const privateKey = Deno.env.get("BNB_TESTNET_PRIVATE_KEY");
-    if (!privateKey) {
-      return json({ error: "Deployment key not configured" }, 400);
-    }
-
-    const account = privateKeyToAccount(
-      (privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`) as `0x${string}`
-    );
-
-    const publicClient = createPublicClient({ chain: bscTestnet, transport: http() });
-    const walletClient = createWalletClient({ account, chain: bscTestnet, transport: http() });
-
-    const balance = await publicClient.getBalance({ address: account.address });
-    console.log(`Deployer: ${account.address}, Balance: ${balance} wei`);
-
-    if (step === "balance") {
-      return json({ deployer: account.address, balance: balance.toString(), balanceBNB: Number(balance) / 1e18 });
-    }
-
-    if (balance === 0n) {
-      return json({ error: "No tBNB balance" }, 400);
-    }
-
-    if (step === "deploy") {
-      const { abi, bytecode, args, name } = body;
-      if (!abi || !bytecode) return json({ error: "abi and bytecode required" }, 400);
-
-      console.log(`Deploying ${name || "contract"}...`);
-      const hash = await walletClient.deployContract({
-        abi,
-        bytecode: (bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`) as `0x${string}`,
-        args: args || [],
-      });
-      console.log(`Tx: ${hash}`);
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      console.log(`Deployed ${name || "contract"} at: ${receipt.contractAddress}`);
-      return json({ address: receipt.contractAddress, txHash: hash, name });
-    }
-
-    return json({ error: "Invalid step. Use 'balance' or 'deploy'" }, 400);
-  } catch (error: any) {
-    console.error("deploy-contracts error:", error instanceof Error ? error.message : "unknown");
-    return json({ error: "Operation failed" }, 500);
-  }
-});
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function normalizeBytecode(bytecode: string): Hex {
+	const trimmed = bytecode.trim();
+	if (!trimmed) {
+		throw new Error("bytecode is required");
+	}
+	const prefixed = trimmed.startsWith("0x") ? trimmed : `0x${trimmed}`;
+	return prefixed as Hex;
 }
+
+function parseAbi(value: unknown): Abi {
+	if (!Array.isArray(value)) {
+		throw new Error("abi must be an array");
+	}
+	return value as Abi;
+}
+
+Deno.serve(async (request: Request) => {
+	const preflight = handlePreflight(request);
+	if (preflight) return preflight;
+
+	try {
+		const body = await parseJsonBody<DeployRequest>(request);
+		const step = String(body.step ?? "balance").toLowerCase();
+
+		const supabase = createServiceRoleClient();
+		await requireAdmin(request, supabase, getServiceRoleKey());
+
+		const privateKeyValue = getOptionalEnv("BNB_TESTNET_PRIVATE_KEY");
+		if (!privateKeyValue) {
+			return errorResponse("BNB_TESTNET_PRIVATE_KEY is required", 400);
+		}
+
+		const rpcUrl =
+			getOptionalEnv("BNB_TESTNET_RPC_URL") ||
+			"https://data-seed-prebsc-1-s1.binance.org:8545";
+		const account = privateKeyToAccount(privateKeyValue as `0x${string}`);
+		const transport = http(rpcUrl);
+		const publicClient = createPublicClient({
+			chain: bscTestnet,
+			transport,
+		});
+		const walletClient = createWalletClient({
+			account,
+			chain: bscTestnet,
+			transport,
+		});
+
+		if (step === "balance") {
+			const balance = await publicClient.getBalance({
+				address: account.address,
+			});
+			return jsonResponse({
+				address: account.address,
+				balance: formatEther(balance),
+				chainId: bscTestnet.id,
+				rpcUrl,
+			});
+		}
+
+		if (step !== "deploy") {
+			return errorResponse("Unsupported step. Use 'balance' or 'deploy'", 400);
+		}
+
+		const abi = parseAbi(body.abi);
+		const bytecode = normalizeBytecode(String(body.bytecode ?? ""));
+		const args = Array.isArray(body.args) ? body.args : [];
+		const contractName = String(body.name ?? "Contract").trim() || "Contract";
+
+		const txHash = await walletClient.deployContract({
+			abi,
+			bytecode,
+			args: args as readonly unknown[],
+		});
+
+		const receipt = await publicClient.waitForTransactionReceipt({
+			hash: txHash,
+		});
+		if (!receipt.contractAddress) {
+			throw new Error("Deployment failed: no contract address returned");
+		}
+
+		return jsonResponse({
+			success: true,
+			name: contractName,
+			address: receipt.contractAddress,
+			txHash,
+			explorer: `https://testnet.bscscan.com/address/${receipt.contractAddress}`,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		console.error("[deploy-contracts]", message);
+		return errorResponse(message, authStatus(message));
+	}
+});

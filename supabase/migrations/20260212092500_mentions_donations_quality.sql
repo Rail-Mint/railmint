@@ -28,7 +28,7 @@ CREATE TABLE public.donations (
   amount NUMERIC(18,8) NOT NULL CHECK (amount > 0),
   asset_symbol TEXT NOT NULL DEFAULT 'BNB',
   chain_id INT NOT NULL DEFAULT 56,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'submitted', 'confirmed', 'failed', 'simulated')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'submitted', 'confirmed', 'failed')),
   tx_hash TEXT,
   failure_reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -38,7 +38,7 @@ CREATE TABLE public.donations (
 CREATE TABLE public.donation_audit_log (
   id BIGSERIAL PRIMARY KEY,
   donation_id UUID REFERENCES public.donations(id) ON DELETE CASCADE,
-  event_type TEXT NOT NULL CHECK (event_type IN ('initiated', 'simulated', 'submitted', 'confirmed', 'failed')),
+  event_type TEXT NOT NULL CHECK (event_type IN ('initiated', 'submitted', 'confirmed', 'failed')),
   tx_hash TEXT,
   error_text TEXT,
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,

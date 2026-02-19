@@ -1,106 +1,95 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { keccak256, toBytes } from "https://esm.sh/viem@2.21.0";
+import {
+	JsonRpcProvider,
+	parseEther,
+	Wallet,
+} from "https://esm.sh/ethers@6.13.4";
+import { requireAdmin } from "../_shared/admin-auth.ts";
+import { getOptionalEnv, getServiceRoleKey } from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+	parseJsonBody,
+} from "../_shared/http.ts";
+import { createInMemoryRateLimiter } from "../_shared/rate-limit.ts";
+import { isWalletAddress } from "../_shared/signature.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
-const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Headers":
-		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+type TriggerPayoutBody = {
+	epoch_id?: number;
+	wallet_address?: string;
 };
 
-const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
+const checkRateLimit = createInMemoryRateLimiter();
 
-function json(data: unknown, status = 200) {
-	return new Response(JSON.stringify(data), {
-		status,
-		headers: { ...corsHeaders, "Content-Type": "application/json" },
-	});
+function parseEpochId(value: unknown): number | null {
+	const numeric = typeof value === "number" ? value : Number(value);
+	if (!Number.isFinite(numeric) || numeric < 1) return null;
+	return Math.floor(numeric);
 }
 
-// Simple in-memory rate limiter
-const rateLimitMap = new Map<string, number[]>();
-function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
-	const now = Date.now();
-	const timestamps = (rateLimitMap.get(key) || []).filter(t => now - t < windowMs);
-	if (timestamps.length >= maxRequests) return false;
-	timestamps.push(now);
-	rateLimitMap.set(key, timestamps);
-	return true;
-}
-
-async function requireAdmin(req: Request, supabase: any): Promise<string> {
-	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-	const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
-	const apikey = req.headers.get("apikey")?.trim();
-
-	// Allow service_role for system/cron operations
-	if (serviceRoleKey && (auth === serviceRoleKey || apikey === serviceRoleKey)) {
-		return "system";
-	}
-
-	// For user operations, validate JWT and check admin role
-	if (!auth) throw new Error("Unauthorized");
-	const { data: { user }, error } = await supabase.auth.getUser(auth);
-	if (error || !user) throw new Error("Unauthorized");
-
-	const { data: roles } = await supabase
-		.from("user_roles")
-		.select("role")
-		.eq("user_id", user.id)
-		.eq("role", "admin")
-		.single();
-
-	if (!roles) throw new Error("Admin access required");
-	return user.id;
-}
-
-Deno.serve(async (req: Request) => {
-	if (req.method === "OPTIONS")
-		return new Response(null, { headers: corsHeaders });
+Deno.serve(async (request: Request) => {
+	const preflight = handlePreflight(request);
+	if (preflight) return preflight;
 
 	try {
-		const body = await req.json();
-		const epoch_id = body.epoch_id;
-		const wallet_address = String(body.wallet_address || "").trim();
+		const body = await parseJsonBody<TriggerPayoutBody>(request);
+		const epochId = parseEpochId(body.epoch_id);
+		const walletAddress = String(body.wallet_address ?? "").trim();
 
-		// --- Input validation ---
-		if (!epoch_id || !Number.isFinite(Number(epoch_id)) || Number(epoch_id) < 1) {
-			return json({ error: "Valid epoch_id is required" }, 400);
+		if (!epochId) {
+			return errorResponse("Valid epoch_id is required", 400);
 		}
-		if (!WALLET_RE.test(wallet_address)) {
-			return json({ error: "Invalid wallet address format" }, 400);
+		if (!isWalletAddress(walletAddress)) {
+			return errorResponse("Invalid wallet address format", 400);
 		}
 
-		const supabase = createClient(
-			Deno.env.get("SUPABASE_URL")!,
-			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+		const supabase = createServiceRoleClient();
+		const { adminId } = await requireAdmin(
+			request,
+			supabase,
+			getServiceRoleKey(),
 		);
 
-		// --- Authorization: service role or admin role ---
-		let adminId: string;
-		try {
-			adminId = await requireAdmin(req, supabase);
-		} catch (e) {
-			return json({ error: e instanceof Error ? e.message : "Unauthorized" }, 403);
+		if (!checkRateLimit(`trigger-payout:${adminId}`, 3, 60_000)) {
+			return errorResponse("Rate limit exceeded. Try again later.", 429);
 		}
 
-		// Rate limit: 3 trigger-payout calls per minute per admin
-		if (!rateLimit(`trigger-payout:${adminId}`, 3, 60_000)) {
-			return json({ error: "Rate limit exceeded. Try again later." }, 429);
+		const payoutSignerKey =
+			getOptionalEnv("PAYOUT_SIGNER_PRIVATE_KEY") ||
+			getOptionalEnv("BNB_TESTNET_PRIVATE_KEY");
+		const payoutRpcUrl =
+			getOptionalEnv("PAYOUT_RPC_URL") || getOptionalEnv("BNB_TESTNET_RPC_URL");
+
+		if (!payoutSignerKey) {
+			throw new Error(
+				"PAYOUT_SIGNER_PRIVATE_KEY (or BNB_TESTNET_PRIVATE_KEY) is required",
+			);
+		}
+		if (!payoutRpcUrl) {
+			throw new Error("PAYOUT_RPC_URL (or BNB_TESTNET_RPC_URL) is required");
 		}
 
-		const txHash = keccak256(toBytes("mock-payout-" + epoch_id + "-" + Date.now()));
+		const provider = new JsonRpcProvider(payoutRpcUrl);
+		const signer = new Wallet(payoutSignerKey, provider);
+		const payoutTx = await signer.sendTransaction({
+			to: walletAddress,
+			value: parseEther("0"),
+		});
+		const txHash = payoutTx.hash;
 
-		const { error } = await supabase
+		const { error: updateError } = await supabase
 			.from("epochs")
 			.update({ status: "paid", payout_tx_hash: txHash })
-			.eq("id", epoch_id)
+			.eq("id", epochId)
 			.eq("status", "closed");
 
-		if (error) throw error;
+		if (updateError) throw updateError;
 
-		return json({ success: true, tx_hash: txHash });
-	} catch (e) {
-		console.error("trigger-payout error:", e);
-		return json({ error: e instanceof Error ? e.message : "Unknown error" }, 400);
+		return jsonResponse({ success: true, tx_hash: txHash });
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		console.error("trigger-payout error:", message);
+		return errorResponse(message, 400);
 	}
 });

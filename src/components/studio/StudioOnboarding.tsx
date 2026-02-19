@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { XIcon } from "@/components/ui/x-icon";
 import { useToast } from "@/hooks/use-toast";
-import { useContractStatus } from "@/hooks/useContractStatus";
 import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { useSignedAction } from "@/hooks/useSignedAction";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,7 +63,6 @@ interface Props {
 
 export function StudioOnboarding({ address, onComplete }: Props) {
 	const { toast } = useToast();
-	const { mode: contractMode } = useContractStatus();
 	const { registerCreator, isDeployed: contractsDeployed } =
 		useRegisterCreator();
 	const { invokeWithSignature } = useSignedAction();
@@ -208,11 +206,7 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 			);
 
 			if (contractsDeployed) {
-				try {
-					registerCreator("", profileHash as `0x${string}`);
-				} catch {
-					console.warn("On-chain registration skipped in mock mode");
-				}
+				registerCreator("", profileHash as `0x${string}`);
 			}
 
 			await invokeWithSignature(
@@ -619,11 +613,6 @@ export function StudioOnboarding({ address, onComplete }: Props) {
 									</p>
 									<p className="text-sm">{form.getValues("prompt_template")}</p>
 								</div>
-								{contractMode === "mock" && (
-									<div className="inline-flex items-center rounded-full border border-transparent bg-secondary px-2.5 py-0.5 text-xs font-semibold text-secondary-foreground">
-										Mock Mode — On-chain registration will be skipped
-									</div>
-								)}
 								<div className="flex gap-2">
 									<Button variant="outline" onClick={() => setStep(2)}>
 										Back

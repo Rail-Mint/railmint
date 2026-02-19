@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getRequiredEnv, getSupabaseUrl } from "./env.ts";
 
 /**
  * OpenRouter embeddings module for RailMintAI
@@ -46,22 +47,20 @@ async function checkOptIn(
  * Generate embedding vector via OpenRouter
  */
 async function generateEmbedding(text: string): Promise<number[]> {
-	const apiKey = Deno.env.get("OPENROUTER_API_KEY");
-	if (!apiKey) {
-		throw new Error("OPENROUTER_API_KEY is not configured");
-	}
+	const apiKey = getRequiredEnv("OPENROUTER_API_KEY");
+	const embeddingsApiUrl = getRequiredEnv("OPENROUTER_EMBEDDINGS_API_URL");
 
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
 	try {
-		const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+		const response = await fetch(embeddingsApiUrl, {
 			method: "POST",
 			signal: controller.signal,
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
 				"Content-Type": "application/json",
-				"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+				"HTTP-Referer": getSupabaseUrl(),
 				"X-Title": "RailMintAI",
 			},
 			body: JSON.stringify({

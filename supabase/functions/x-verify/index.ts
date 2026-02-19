@@ -1,97 +1,73 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyMessage } from "https://esm.sh/viem@2.21.0";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+	parseJsonBody,
+} from "../_shared/http.ts";
+import { verifyWalletSignature } from "../_shared/signature.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
-const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Headers":
-		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+type XVerifyBody = {
+	wallet_address?: string;
+	signature?: string;
+	sign_timestamp?: number;
+	code?: string;
+	code_verifier?: string;
+	redirect_uri?: string;
 };
 
-const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
-
-function json(data: unknown, status = 200) {
-	return new Response(JSON.stringify(data), {
-		status,
-		headers: { ...corsHeaders, "Content-Type": "application/json" },
-	});
-}
-
-function getSupabase() {
-	return createClient(
-		Deno.env.get("SUPABASE_URL")!,
-		Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-	);
-}
+type CreatorRow = {
+	id: string;
+	x_handle: string | null;
+	x_verified: boolean | null;
+};
 
 async function logActivity(
-	supabase: ReturnType<typeof createClient>,
-	wallet_address: string,
-	event_type: string,
+	walletAddress: string,
+	eventType: string,
 	metadata: Record<string, unknown> = {},
 ) {
+	const supabase = createServiceRoleClient();
 	try {
 		await supabase.from("wallet_activity_log").insert({
-			wallet_address,
-			event_type,
+			wallet_address: walletAddress,
+			event_type: eventType,
 			metadata,
 		});
-	} catch (e) {
-		console.error("[x-verify] Failed to log activity:", e);
+	} catch (error) {
+		console.error("[x-verify] Failed to log activity", error);
 	}
 }
 
-async function verifyWalletSignature(
-	body: Record<string, unknown>,
-): Promise<string> {
-	const wallet_address = String(body.wallet_address || "").trim();
-	const signature = String(body.signature || "").trim();
-	const sign_timestamp = Number(body.sign_timestamp || 0);
+Deno.serve(async (request: Request) => {
+	const preflight = handlePreflight(request);
+	if (preflight) return preflight;
 
-	if (!WALLET_RE.test(wallet_address))
-		throw new Error("Invalid wallet address format");
-	if (!signature || !sign_timestamp) throw new Error("Missing signature");
-	if (Math.abs(Date.now() - sign_timestamp) > 300_000)
-		throw new Error("Signature expired");
-
-	const message = `RailMintAI Action\nFunction: x-verify\nWallet: ${wallet_address}\nTimestamp: ${sign_timestamp}`;
-	const valid = await verifyMessage({
-		address: wallet_address as `0x${string}`,
-		message,
-		signature: signature as `0x${string}`,
-	});
-	if (!valid) throw new Error("Invalid wallet signature");
-
-	return wallet_address;
-}
-
-Deno.serve(async (req: Request) => {
-	if (req.method === "OPTIONS")
-		return new Response(null, { headers: corsHeaders });
-
-	const supabase = getSupabase();
+	const supabase = createServiceRoleClient();
 
 	try {
-		const body = await req.json();
-		const wallet_address = await verifyWalletSignature(body);
+		const body = await parseJsonBody<XVerifyBody>(request);
+		const walletAddress = await verifyWalletSignature(body, "x-verify");
 
-		const code = String(body.code || "").trim();
-		const code_verifier = String(body.code_verifier || "").trim();
-		const redirect_uri = String(body.redirect_uri || "").trim();
+		const code = String(body.code ?? "").trim();
+		const codeVerifier = String(body.code_verifier ?? "").trim();
+		const redirectUri = String(body.redirect_uri ?? "").trim();
 
-		if (!code || !code_verifier || !redirect_uri) {
-			return json({ error: "Missing OAuth parameters" }, 400);
+		if (!code || !codeVerifier || !redirectUri) {
+			return errorResponse("Missing OAuth parameters", 400);
 		}
 
-		// Log the verification attempt
-		await logActivity(supabase, wallet_address, "x_verify_attempt", {
-			redirect_uri,
+		await logActivity(walletAddress, "x_verify_attempt", {
+			redirect_uri: redirectUri,
 		});
 
-		const clientId = Deno.env.get("TWITTER_CLIENT_ID")!;
-		const clientSecret = Deno.env.get("TWITTER_SECRET")!;
+		const clientId = Deno.env.get("TWITTER_CLIENT_ID") ?? "";
+		const clientSecret = Deno.env.get("TWITTER_SECRET") ?? "";
+		if (!clientId || !clientSecret) {
+			return errorResponse("Twitter OAuth credentials are not configured", 500);
+		}
 
-		// Exchange authorization code for access token
-		const tokenRes = await fetch("https://api.x.com/2/oauth2/token", {
+		const tokenResponse = await fetch("https://api.x.com/2/oauth2/token", {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/x-www-form-urlencoded",
@@ -100,90 +76,79 @@ Deno.serve(async (req: Request) => {
 			body: new URLSearchParams({
 				code,
 				grant_type: "authorization_code",
-				redirect_uri,
-				code_verifier,
+				redirect_uri: redirectUri,
+				code_verifier: codeVerifier,
 			}),
 		});
 
-		if (!tokenRes.ok) {
-			const err = await tokenRes.text();
-			console.error("[x-verify] Token exchange failed:", err);
-			await logActivity(supabase, wallet_address, "x_verify_token_failed", {
-				error: err,
+		if (!tokenResponse.ok) {
+			const responseText = await tokenResponse.text();
+			await logActivity(walletAddress, "x_verify_token_failed", {
+				error: responseText,
 			});
-			return json(
-				{ error: "Failed to exchange authorization code with X" },
-				400,
-			);
+			return errorResponse("Failed to exchange authorization code with X", 400);
 		}
 
-		const tokenData = await tokenRes.json();
-		const accessToken = tokenData.access_token;
+		const tokenPayload = (await tokenResponse.json()) as {
+			access_token?: string;
+		};
+		const accessToken = tokenPayload.access_token;
+		if (!accessToken) {
+			return errorResponse("OAuth token response missing access token", 400);
+		}
 
-		// Fetch the authenticated user's profile
-		const userRes = await fetch(
+		const userResponse = await fetch(
 			"https://api.x.com/2/users/me?user.fields=username",
 			{
 				headers: { Authorization: `Bearer ${accessToken}` },
 			},
 		);
 
-		if (!userRes.ok) {
-			const err = await userRes.text();
-			console.error("[x-verify] User fetch failed:", err);
-			await logActivity(
-				supabase,
-				wallet_address,
-				"x_verify_user_fetch_failed",
-				{ error: err },
-			);
-			return json({ error: "Failed to fetch X user profile" }, 400);
+		if (!userResponse.ok) {
+			const responseText = await userResponse.text();
+			await logActivity(walletAddress, "x_verify_user_fetch_failed", {
+				error: responseText,
+			});
+			return errorResponse("Failed to fetch X user profile", 400);
 		}
 
-		const userData = await userRes.json();
-		const xUsername = userData.data?.username;
-
-		if (!xUsername) {
-			return json({ error: "Could not retrieve X username" }, 400);
+		const userPayload = (await userResponse.json()) as {
+			data?: { username?: string };
+		};
+		const username = userPayload.data?.username;
+		if (!username) {
+			return errorResponse("Could not retrieve X username", 400);
 		}
 
-		const handle = `@${xUsername}`;
-
-		// Find the creator by wallet
-		const { data: creator, error: findErr } = await supabase
+		const handle = `@${username}`;
+		const { data: creatorData, error: creatorError } = await supabase
 			.from("creators")
 			.select("id, x_handle, x_verified")
-			.eq("wallet_address", wallet_address)
+			.eq("wallet_address", walletAddress)
 			.maybeSingle();
 
-		if (findErr) {
-			console.error("[x-verify] Creator lookup failed:", findErr);
-			throw findErr;
-		}
-		if (!creator) {
-			return json({ error: "Creator not found for this wallet" }, 404);
+		if (creatorError) throw creatorError;
+		if (!creatorData) {
+			return errorResponse("Creator not found for this wallet", 404);
 		}
 
-		// If the creator already has a verified X handle that doesn't match, block the re-link
+		const creator = creatorData as CreatorRow;
 		if (
 			creator.x_verified &&
 			creator.x_handle &&
 			creator.x_handle.toLowerCase() !== handle.toLowerCase()
 		) {
-			await logActivity(supabase, wallet_address, "x_verify_handle_mismatch", {
+			await logActivity(walletAddress, "x_verify_handle_mismatch", {
 				registered: creator.x_handle,
 				actual: handle,
 			});
-			return json(
-				{
-					error: `X account @${xUsername} does not match the already-verified handle ${creator.x_handle}.`,
-				},
+			return errorResponse(
+				`X account @${username} does not match the already-verified handle ${creator.x_handle}.`,
 				400,
 			);
 		}
 
-		// Update creator as verified
-		const { error: updateErr } = await supabase
+		const { error: updateError } = await supabase
 			.from("creators")
 			.update({
 				x_handle: handle,
@@ -192,29 +157,25 @@ Deno.serve(async (req: Request) => {
 			})
 			.eq("id", creator.id);
 
-		if (updateErr) {
-			console.error("[x-verify] Creator update failed:", updateErr);
-			throw updateErr;
-		}
+		if (updateError) throw updateError;
 
-		// Log successful verification
-		await logActivity(supabase, wallet_address, "x_verify_success", {
+		await logActivity(walletAddress, "x_verify_success", {
 			x_handle: handle,
 			creator_id: creator.id,
 		});
 
-		return json({
+		return jsonResponse({
 			success: true,
 			x_handle: handle,
-			x_username: xUsername,
+			x_username: username,
 		});
-	} catch (e) {
+	} catch (error) {
 		const errorId = crypto.randomUUID().slice(0, 8);
-		console.error(`[x-verify:${errorId}]`, e instanceof Error ? e.message : e);
-		const msg =
-			e instanceof Error && /signature|expired|wallet|format/i.test(e.message)
-				? e.message
-				: "Verification failed";
-		return json({ error: msg, error_id: errorId }, 400);
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(`[x-verify:${errorId}]`, message);
+		const userMessage = /signature|expired|wallet|format/i.test(message)
+			? message
+			: "Verification failed";
+		return jsonResponse({ error: userMessage, error_id: errorId }, 400);
 	}
 });

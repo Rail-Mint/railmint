@@ -13,7 +13,6 @@
 		"test:watch": "vitest",
 		"hardhat:compile": "hardhat compile",
 		"hardhat:test": "NODE_OPTIONS='--import tsx' hardhat test",
-		"hardhat:deploy:opbnb": "hardhat run scripts/deploy.cjs --network opbnbTestnet",
 		"hardhat:deploy:bsc": "hardhat run scripts/deploy.cjs --network bscTestnet"
 	},
 	"dependencies": {

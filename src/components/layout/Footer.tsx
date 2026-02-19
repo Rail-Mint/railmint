@@ -7,8 +7,7 @@ import {
 	CREATOR_REGISTRY_ADDRESS,
 	REWARD_DISTRIBUTOR_ADDRESS,
 } from "@/lib/contracts";
-
-const EXPLORER = "https://testnet.bscscan.com/address";
+import { getExplorerAddressUrl } from "@/lib/explorer";
 
 export function Footer() {
 	const { isConnected } = useAccount();
@@ -58,7 +57,7 @@ export function Footer() {
 							{contractLinks.map((c) => (
 								<a
 									key={c.label}
-									href={`${EXPLORER}/${c.address}`}
+									href={getExplorerAddressUrl(c.address)}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="inline-flex items-center gap-0.5 text-emerald-600 hover:underline dark:text-emerald-400"

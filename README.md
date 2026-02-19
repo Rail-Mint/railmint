@@ -17,6 +17,71 @@ RailMint is a full-stack Web3 application that combines:
 - Epoch-based reward distribution system
 - Web3 wallet integration via RainbowKit + Wagmi
 
+## Onchain Proof Matrix
+
+RailMint now runs in strict onchain mode for proof-carrying actions. If signing keys or RPC configuration are missing, the action fails instead of generating simulated transaction hashes.
+
+| Flow | Execution Path | Proof Artifact | Verification |
+| --- | --- | --- | --- |
+| Creator onboarding | Wallet signs onchain registration via `CreatorRegistry.registerCreator` | Wallet tx hash | BSC testnet explorer link in onboarding success state |
+| AI post generation | `supabase/functions/generate-post` submits a real BSC testnet transaction before persisting post | `posts.commit_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
+| Mention-triggered publish | `supabase/functions/process-mention` submits a real BSC testnet transaction before writing post | `posts.commit_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
+| Donation transfer | `supabase/functions/process-mention` sends native BNB transfer via signer wallet | `donations.tx_hash` + audit log `submitted` event | `https://testnet.bscscan.com/tx/<hash>` |
+| Epoch payout trigger | `supabase/functions/trigger-payout` sends transaction using payout signer before marking epoch paid | `epochs.payout_tx_hash` | `https://testnet.bscscan.com/tx/<hash>` |
+
+## Reproducible E2E Demo
+
+Use this sequence to produce verifiable proofs end-to-end.
+
+1. Configure app and edge-function environment variables:
+
+```env
+# Frontend
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_PUBLISHABLE_KEY=...
+VITE_BLOCKCHAIN_EXPLORER_BASE_URL=https://testnet.bscscan.com
+VITE_CREATOR_REGISTRY_ADDRESS=0x...
+VITE_CONTENT_PUBLISHING_ADDRESS=0x...
+VITE_VOTING_SYSTEM_ADDRESS=0x...
+VITE_REWARD_DISTRIBUTOR_ADDRESS=0x...
+
+# Edge functions (Supabase secrets)
+BNB_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+BNB_TESTNET_EXPLORER_URL=https://testnet.bscscan.com
+BNB_TESTNET_PRIVATE_KEY=0x...
+DONATION_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+DONATION_SIGNER_PRIVATE_KEY=0x...
+PAYOUT_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+PAYOUT_SIGNER_PRIVATE_KEY=0x...
+OPENROUTER_API_KEY=...
+OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+OPENROUTER_EMBEDDINGS_API_URL=https://openrouter.ai/api/v1/embeddings
+UPLOAD_POST_BASE_URL=https://api.upload-post.com/api
+TWEETIO_BASE_URL=https://api.twitterapi.io
+POST_URL_BASE=https://railmint.com/post
+PLAYWRIGHT_BASE_URL=http://localhost:8080
+```
+
+2. Install and run:
+
+```bash
+npm install
+npm run hardhat:compile
+npm run hardhat:deploy:bsc
+npm run dev
+```
+
+3. Perform proof-producing actions:
+   - Complete creator onboarding with wallet connected.
+   - Generate and publish a post.
+   - Execute a mention-triggered publish.
+   - Send a donation command and confirm transfer.
+   - Trigger payout for a closed epoch.
+
+4. Verify proofs:
+   - Open every tx hash from app UI or DB fields (`posts.commit_tx_hash`, `donations.tx_hash`, `epochs.payout_tx_hash`) on BSC testnet explorer.
+   - Confirm no simulated statuses exist in `donations` or `donation_audit_log`.
+
 ## How It Works
 
 ### System Architecture
@@ -318,14 +383,32 @@ Edit `.env` and add your configuration:
 ```env
 # Supabase
 VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+VITE_SUPABASE_PUBLISHABLE_KEY=your_supabase_publishable_key
+
+# Explorer links
+VITE_BLOCKCHAIN_EXPLORER_BASE_URL=https://testnet.bscscan.com
 
 # Smart Contract Addresses (after deployment)
 VITE_CREATOR_REGISTRY_ADDRESS=0x...
 VITE_CONTENT_PUBLISHING_ADDRESS=0x...
 VITE_VOTING_SYSTEM_ADDRESS=0x...
 VITE_REWARD_DISTRIBUTOR_ADDRESS=0x...
+
+# Edge functions
+BNB_TESTNET_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+BNB_TESTNET_EXPLORER_URL=https://testnet.bscscan.com
+OPENROUTER_API_KEY=...
+OPENROUTER_API_URL=https://openrouter.ai/api/v1/chat/completions
+OPENROUTER_EMBEDDINGS_API_URL=https://openrouter.ai/api/v1/embeddings
+UPLOAD_POST_BASE_URL=https://api.upload-post.com/api
+TWEETIO_BASE_URL=https://api.twitterapi.io
+POST_URL_BASE=https://railmint.com/post
+
+# E2E tests
+PLAYWRIGHT_BASE_URL=http://localhost:8080
 ```
+
+Frontend env variables are validated centrally in `src/lib/env.ts`, and Supabase Edge Function env values are read through `supabase/functions/_shared/env.ts`.
 
 4. Start the development server:
 ```bash

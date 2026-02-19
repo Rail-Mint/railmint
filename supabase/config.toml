@@ -39,5 +39,8 @@ verify_jwt = false
 [functions.x-oauth-start]
 verify_jwt = false
 
-[functions.add-x-monitor]
+[functions.compile-contract]
+verify_jwt = false
+
+[functions.deploy-contracts]
 verify_jwt = false

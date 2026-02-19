@@ -1,10 +1,14 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Headers":
-		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+	getOptionalEnv,
+	getServiceRoleKey,
+	getSupabaseUrl,
+} from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+} from "../_shared/http.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
 type WorkerResult = {
 	processed: number;
@@ -43,12 +47,12 @@ async function runWithConcurrency<T, R>(
 }
 
 Deno.serve(async (req: Request) => {
-	if (req.method === "OPTIONS")
-		return new Response(null, { headers: corsHeaders });
+	const preflight = handlePreflight(req);
+	if (preflight) return preflight;
 
 	try {
-		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-		const supabaseUrl = Deno.env.get("SUPABASE_URL");
+		const serviceRoleKey = getServiceRoleKey();
+		const supabaseUrl = getSupabaseUrl();
 		if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 		if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
 
@@ -58,34 +62,33 @@ Deno.serve(async (req: Request) => {
 		const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
 
 		if (authToken !== serviceRoleKey && apikey !== serviceRoleKey) {
-			return new Response(
-				JSON.stringify({ error: "Unauthorized. Service role access required." }),
-				{ status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-			);
+			return errorResponse("Unauthorized. Service role access required.", 401);
 		}
 
-		const body = await req.json().catch(() => ({}));
+		const body = await req.json().catch(() => ({}) as Record<string, unknown>);
 		if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 		if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
 
 		const processMentionUrl =
-			Deno.env.get("PROCESS_MENTION_FUNCTION_URL") ||
+			getOptionalEnv("PROCESS_MENTION_FUNCTION_URL") ||
 			`${supabaseUrl}/functions/v1/process-mention`;
 
 		const maxItems = clampInt(
-			Number(body?.max_items || Deno.env.get("MENTION_DRAIN_MAX_ITEMS") || 100),
+			Number(
+				body?.max_items || getOptionalEnv("MENTION_DRAIN_MAX_ITEMS") || 100,
+			),
 			1,
 			500,
 		);
 		const concurrency = clampInt(
 			Number(
-				body?.concurrency || Deno.env.get("MENTION_DRAIN_CONCURRENCY") || 12,
+				body?.concurrency || getOptionalEnv("MENTION_DRAIN_CONCURRENCY") || 12,
 			),
 			1,
 			50,
 		);
 
-		const supabase = createClient(supabaseUrl, serviceRoleKey);
+		const supabase = createServiceRoleClient();
 		const { data: queuedMentions, error: fetchErr } = await supabase
 			.from("mentions")
 			.select("id, mention_id")
@@ -100,17 +103,14 @@ Deno.serve(async (req: Request) => {
 		}>;
 
 		if (queued.length === 0) {
-			return new Response(
-				JSON.stringify({
-					success: true,
-					queued: 0,
-					processed: 0,
-					skipped: 0,
-					failed: 0,
-					errors: [],
-				}),
-				{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
-			);
+			return jsonResponse({
+				success: true,
+				queued: 0,
+				processed: 0,
+				skipped: 0,
+				failed: 0,
+				errors: [],
+			});
 		}
 
 		const perMention = await runWithConcurrency(
@@ -172,26 +172,18 @@ Deno.serve(async (req: Request) => {
 			{ processed: 0, skipped: 0, failed: 0, errors: [] },
 		);
 
-		return new Response(
-			JSON.stringify({
-				success: true,
-				queued: queued.length,
-				processed: summary.processed,
-				skipped: summary.skipped,
-				failed: summary.failed,
-				errors: summary.errors,
-			}),
-			{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
-		);
+		return jsonResponse({
+			success: true,
+			queued: queued.length,
+			processed: summary.processed,
+			skipped: summary.skipped,
+			failed: summary.failed,
+			errors: summary.errors,
+		});
 	} catch (error) {
-		return new Response(
-			JSON.stringify({
-				error: error instanceof Error ? error.message : "Unknown error",
-			}),
-			{
-				status: 400,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
+		return errorResponse(
+			error instanceof Error ? error.message : "Unknown error",
+			400,
 		);
 	}
 });

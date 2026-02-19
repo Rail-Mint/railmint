@@ -1,10 +1,14 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Headers":
-		"authorization, x-client-info, apikey, content-type, x-webhook-token, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+	getOptionalEnv,
+	getRequiredEnv,
+	getSupabaseUrl,
+} from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+} from "../_shared/http.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
 type ProcessMentionResult = {
 	success?: boolean;
@@ -14,6 +18,19 @@ type ProcessMentionResult = {
 	result?: Record<string, unknown>;
 	payload?: Record<string, unknown>;
 	error?: string;
+};
+
+type WebhookSupabaseClient = {
+	from: (table: string) => {
+		select: (columns: string) => {
+			eq: (
+				column: string,
+				value: string,
+			) => {
+				maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+			};
+		};
+	};
 };
 
 function normalizeHandle(value?: string | null): string | null {
@@ -150,20 +167,13 @@ async function invokeProcessMention(params: {
 }
 
 Deno.serve(async (req: Request) => {
-	if (req.method === "OPTIONS")
-		return new Response(null, { headers: corsHeaders });
+	const preflight = handlePreflight(req);
+	if (preflight) return preflight;
 
 	try {
-		const token = Deno.env.get("TWITTERAPI_WEBHOOK_TOKEN");
-		if (!token) {
-			return new Response(
-				JSON.stringify({ error: "Webhook authentication not configured" }),
-				{
-					status: 500,
-					headers: { ...corsHeaders, "Content-Type": "application/json" },
-				},
-			);
-		}
+		const token = getOptionalEnv("TWITTERAPI_WEBHOOK_TOKEN");
+		if (!token)
+			return errorResponse("Webhook authentication not configured", 500);
 
 		const headerToken = req.headers.get("x-webhook-token")?.trim() ?? "";
 		const authHeader = req.headers.get("authorization")?.trim() ?? "";
@@ -179,11 +189,11 @@ Deno.serve(async (req: Request) => {
 			return result === 0;
 		}
 
-		if (!constantTimeEqual(token, headerToken) && !constantTimeEqual(token, authToken)) {
-			return new Response(JSON.stringify({ error: "Unauthorized webhook" }), {
-				status: 401,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			});
+		if (
+			!constantTimeEqual(token, headerToken) &&
+			!constantTimeEqual(token, authToken)
+		) {
+			return errorResponse("Unauthorized webhook", 401);
 		}
 
 		const rawBody = await req.text();
@@ -199,8 +209,8 @@ Deno.serve(async (req: Request) => {
 		});
 
 		if (!mentionId || !text) {
-			return new Response(
-				JSON.stringify({
+			return jsonResponse(
+				{
 					error: "Unable to parse mention payload",
 					extracted: {
 						mention_id: mentionId,
@@ -208,43 +218,35 @@ Deno.serve(async (req: Request) => {
 						author_handle: authorHandle,
 						tweet_url: tweetUrl,
 					},
-				}),
-				{
-					status: 400,
-					headers: {
-						...corsHeaders,
-						"Content-Type": "application/json",
-					},
 				},
+				400,
 			);
 		}
 
-		const supabaseUrl = Deno.env.get("SUPABASE_URL");
-		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+		const supabaseUrl = getSupabaseUrl();
+		const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
 		const processMentionUrl =
-			Deno.env.get("PROCESS_MENTION_FUNCTION_URL") ||
+			getOptionalEnv("PROCESS_MENTION_FUNCTION_URL") ||
 			(supabaseUrl ? `${supabaseUrl}/functions/v1/process-mention` : null);
 
-		if (!supabaseUrl || !serviceRoleKey || !processMentionUrl) {
+		if (!processMentionUrl) {
 			throw new Error("Missing Supabase configuration for webhook handler");
 		}
 
-		const supabase = createClient(supabaseUrl, serviceRoleKey);
+		const supabase = createServiceRoleClient() as WebhookSupabaseClient;
 		const existing = await supabase
 			.from("mentions")
 			.select("id")
 			.eq("mention_id", mentionId)
 			.maybeSingle();
+		const existingId = (existing.data as { id?: string } | null)?.id;
 
-		if (existing.data) {
-			return new Response(
-				JSON.stringify({
-					success: true,
-					duplicate: true,
-					mention_db_id: existing.data.id,
-				}),
-				{ headers: { ...corsHeaders, "Content-Type": "application/json" } },
-			);
+		if (existingId) {
+			return jsonResponse({
+				success: true,
+				duplicate: true,
+				mention_db_id: existingId,
+			});
 		}
 
 		const processPayload: Record<string, unknown> = {
@@ -267,18 +269,11 @@ Deno.serve(async (req: Request) => {
 			payload: processPayload,
 		});
 
-		return new Response(JSON.stringify(result), {
-			headers: { ...corsHeaders, "Content-Type": "application/json" },
-		});
+		return jsonResponse(result);
 	} catch (error) {
-		return new Response(
-			JSON.stringify({
-				error: error instanceof Error ? error.message : "Unknown error",
-			}),
-			{
-				status: 400,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
+		return errorResponse(
+			error instanceof Error ? error.message : "Unknown error",
+			400,
 		);
 	}
 });

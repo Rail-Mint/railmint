@@ -188,6 +188,7 @@ export default function Studio() {
 						onProfileUpdate={refetch}
 					/>
 				);
+
 			default:
 				return (
 					<StudioOverview

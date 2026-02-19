@@ -42,14 +42,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { XIcon } from "@/components/ui/x-icon";
 import { useToast } from "@/hooks/use-toast";
-import { useContractStatus } from "@/hooks/useContractStatus";
 import { useSignedAction } from "@/hooks/useSignedAction";
 import { supabase } from "@/integrations/supabase/client";
+import { getExplorerTxUrl } from "@/lib/explorer";
 import {
 	computeContentHash,
 	computeMetaHash,
 	computePromptHash,
-} from "@/lib/mock-contract";
+} from "@/lib/proof-hashes";
 
 interface Creator {
 	id: string;
@@ -67,7 +67,6 @@ interface PostDetailData {
 	content_hash: string;
 	meta_hash: string;
 	commit_tx_hash: string | null;
-	is_fallback: boolean;
 	created_at: string;
 	creator: Creator | null;
 	creator_id: string;
@@ -142,7 +141,6 @@ export default function PostDetail() {
 	const { address } = useAccount();
 	const { openConnectModal } = useConnectModal();
 	const { toast } = useToast();
-	const { mode: contractMode } = useContractStatus();
 	const { invokeWithSignature } = useSignedAction();
 	const [post, setPost] = useState<PostDetailData | null>(null);
 	const [creator, setCreator] = useState<Creator | null>(null);
@@ -260,7 +258,7 @@ export default function PostDetail() {
 				.from("likes")
 				.select("id")
 				.eq("post_id", id)
-				.eq("wallet_address", address)
+				.eq("wallet_address", address.toLowerCase())
 				.maybeSingle();
 			setLiked(!!likeData);
 		}
@@ -624,10 +622,6 @@ export default function PostDetail() {
 								</div>
 							</PopoverContent>
 						</Popover>
-
-						{post.is_fallback ? (
-							<Badge variant="secondary">Fallback source</Badge>
-						) : null}
 					</div>
 				</div>
 			</section>
@@ -942,7 +936,7 @@ export default function PostDetail() {
 												</div>
 											</div>
 											<a
-												href={`https://testnet.bscscan.com/tx/${post.commit_tx_hash}`}
+												href={getExplorerTxUrl(post.commit_tx_hash)}
 												target="_blank"
 												rel="noopener noreferrer"
 												className="group flex items-center justify-between rounded-lg bg-background/80 px-3 py-2.5 hover:bg-background transition-colors"

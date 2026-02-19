@@ -1,125 +1,140 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { verifyMessage } from "https://esm.sh/viem@2.21.0";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+	parseJsonBody,
+} from "../_shared/http.ts";
+import { verifyWalletSignature } from "../_shared/signature.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+const UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+type ToggleLikeBody = {
+	wallet_address?: string;
+	signature?: string;
+	sign_timestamp?: number;
+	post_id?: string;
+	action?: "like" | "unlike" | "toggle" | string;
 };
 
-const WALLET_RE = /^0x[a-fA-F0-9]{40}$/;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+type ToggleLikeSupabaseClient = {
+	from: (table: string) => {
+		select: (columns: string) => {
+			eq: (
+				column: string,
+				value: string,
+			) => {
+				eq: (
+					column: string,
+					value: string,
+				) => {
+					single: () => Promise<{ data: unknown; error: unknown }>;
+					maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+				};
+				single: () => Promise<{ data: unknown; error: unknown }>;
+				maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+			};
+		};
+		insert: (row: Record<string, unknown>) => Promise<{ error: unknown }>;
+		delete: () => {
+			eq: (column: string, value: string) => Promise<{ error: unknown }>;
+		};
+	};
+};
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
+Deno.serve(async (request: Request) => {
+	const preflight = handlePreflight(request);
+	if (preflight) return preflight;
 
-async function verifyWalletSignature(body: Record<string, unknown>, functionName: string): Promise<string> {
-  const wallet_address = String(body.wallet_address || "").trim();
-  const signature = String(body.signature || "").trim();
-  const sign_timestamp = Number(body.sign_timestamp || 0);
+	try {
+		const body = await parseJsonBody<ToggleLikeBody>(request);
 
-  if (!WALLET_RE.test(wallet_address)) {
-    throw new Error("Invalid wallet address format");
-  }
-  if (!signature || !sign_timestamp) {
-    throw new Error("Missing signature. Please sign the action with your wallet.");
-  }
+		const walletAddress = await verifyWalletSignature(body, "toggle-like");
+		const normalizedWalletAddress = walletAddress.toLowerCase();
 
-  // Reject signatures older than 5 minutes
-  if (Math.abs(Date.now() - sign_timestamp) > 300_000) {
-    throw new Error("Signature expired. Please try again.");
-  }
+		const postId = String(body.post_id || "").trim();
+		const action = String(body.action || "toggle").trim();
 
-  const message = `RailMintAI Action\nFunction: ${functionName}\nWallet: ${wallet_address}\nTimestamp: ${sign_timestamp}`;
+		if (!UUID_RE.test(postId)) {
+			return errorResponse("Invalid post ID format", 400);
+		}
+		if (!["like", "unlike", "toggle"].includes(action)) {
+			return errorResponse(
+				"Invalid action. Use 'like', 'unlike', or 'toggle'",
+				400,
+			);
+		}
 
-  const valid = await verifyMessage({
-    address: wallet_address as `0x${string}`,
-    message,
-    signature: signature as `0x${string}`,
-  });
+		const supabase = createServiceRoleClient() as ToggleLikeSupabaseClient;
 
-  if (!valid) {
-    throw new Error("Invalid wallet signature. Action rejected.");
-  }
+		const { data: post, error: postError } = await supabase
+			.from("posts")
+			.select("id")
+			.eq("id", postId)
+			.single();
 
-  return wallet_address;
-}
+		if (postError || !post) {
+			return errorResponse("Post not found", 404);
+		}
 
-Deno.serve(async (req: Request) => {
-  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+		const { data: existingLike } = await supabase
+			.from("likes")
+			.select("id")
+			.eq("post_id", postId)
+			.eq("wallet_address", normalizedWalletAddress)
+			.maybeSingle();
+		const existingLikeId = (existingLike as { id?: string } | null)?.id;
 
-  try {
-    const body = await req.json();
+		let liked = false;
 
-    const wallet_address = await verifyWalletSignature(body, "toggle-like");
+		if (action === "toggle") {
+			if (existingLikeId) {
+				const { error } = await supabase
+					.from("likes")
+					.delete()
+					.eq("id", existingLikeId);
+				if (error) throw error;
+				liked = false;
+			} else {
+				const { error } = await supabase.from("likes").insert({
+					post_id: postId,
+					wallet_address: normalizedWalletAddress,
+				});
+				if (error) throw error;
+				liked = true;
+			}
+		} else if (action === "like") {
+			if (!existingLikeId) {
+				const { error } = await supabase.from("likes").insert({
+					post_id: postId,
+					wallet_address: normalizedWalletAddress,
+				});
+				if (error) throw error;
+			}
+			liked = true;
+		} else {
+			if (existingLikeId) {
+				const { error } = await supabase
+					.from("likes")
+					.delete()
+					.eq("id", existingLikeId);
+				if (error) throw error;
+			}
+			liked = false;
+		}
 
-    const post_id = String(body.post_id || "").trim();
-    const action = String(body.action || "toggle").trim();
-
-    if (!UUID_RE.test(post_id)) {
-      return json({ error: "Invalid post ID format" }, 400);
-    }
-    if (!["like", "unlike", "toggle"].includes(action)) {
-      return json({ error: "Invalid action. Use 'like', 'unlike', or 'toggle'" }, 400);
-    }
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    // Check if post exists
-    const { data: post } = await supabase
-      .from("posts")
-      .select("id")
-      .eq("id", post_id)
-      .single();
-
-    if (!post) {
-      return json({ error: "Post not found" }, 404);
-    }
-
-    // Check existing like
-    const { data: existingLike } = await supabase
-      .from("likes")
-      .select("id")
-      .eq("post_id", post_id)
-      .eq("wallet_address", wallet_address)
-      .maybeSingle();
-
-    let liked: boolean;
-
-    if (action === "toggle") {
-      if (existingLike) {
-        await supabase.from("likes").delete().eq("id", existingLike.id);
-        liked = false;
-      } else {
-        await supabase.from("likes").insert({ post_id, wallet_address });
-        liked = true;
-      }
-    } else if (action === "like") {
-      if (!existingLike) {
-        await supabase.from("likes").insert({ post_id, wallet_address });
-      }
-      liked = true;
-    } else {
-      if (existingLike) {
-        await supabase.from("likes").delete().eq("id", existingLike.id);
-      }
-      liked = false;
-    }
-
-    return json({ success: true, liked });
-  } catch (e) {
-    const errorId = crypto.randomUUID().slice(0, 8);
-    console.error(`[toggle-like:${errorId}]`, e instanceof Error ? e.message : e);
-    const msg = e instanceof Error && /signature|expired|wallet/i.test(e.message)
-      ? e.message
-      : "Operation failed";
-    return json({ error: msg, error_id: errorId }, 400);
-  }
+		return jsonResponse({ success: true, liked });
+	} catch (e) {
+		const errorId = crypto.randomUUID().slice(0, 8);
+		console.error(
+			`[toggle-like:${errorId}]`,
+			e instanceof Error ? e.message : e,
+		);
+		const msg =
+			e instanceof Error && /signature|expired|wallet/i.test(e.message)
+				? e.message
+				: "Operation failed";
+		return jsonResponse({ error: msg, error_id: errorId }, 400);
+	}
 });

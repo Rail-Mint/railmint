@@ -38,10 +38,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { XIcon } from "@/components/ui/x-icon";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useToast } from "@/hooks/use-toast";
-import { useContractStatus } from "@/hooks/useContractStatus";
 import { useRegisterCreator } from "@/hooks/useCreatorRegistry";
 import { useSignedAction } from "@/hooks/useSignedAction";
 import { supabase } from "@/integrations/supabase/client";
+import { getExplorerTxUrl } from "@/lib/explorer";
 import { buildXOAuthUrl } from "@/lib/x-oauth";
 
 const schema = z.object({
@@ -205,7 +205,6 @@ export default function Onboarding() {
 		}
 	};
 	const { toast } = useToast();
-	const { mode: contractMode } = useContractStatus();
 	const { invokeWithSignature } = useSignedAction();
 	const {
 		registerCreator,
@@ -625,32 +624,21 @@ export default function Onboarding() {
 			});
 			const profileHash = keccak256(toHex(profileData));
 
-			// Attempt Web3 registration only if contracts are deployed
-			if (contractsDeployed) {
-				try {
-					await registerCreator("", profileHash);
-					toast({
-						title: "Transaction pending",
-						description: "Please confirm the transaction in your wallet...",
-					});
-					if (hash) {
-						setWeb3TxHash(hash);
-					}
-				} catch (web3Err) {
-					console.error("Web3 registration failed:", web3Err);
-					toast({
-						title: "Blockchain registration failed",
-						description: "Falling back to database registration only.",
-						variant: "destructive",
-					});
-				}
-			} else {
-				console.info(
-					"[Onboarding] Contracts not deployed, skipping on-chain registration",
+			if (!contractsDeployed) {
+				throw new Error(
+					"Contracts are not deployed. On-chain registration is required.",
 				);
 			}
 
-			// Always save to Supabase as fallback/backup
+			await registerCreator("", profileHash);
+			toast({
+				title: "Transaction pending",
+				description: "Please confirm the transaction in your wallet...",
+			});
+			if (hash) {
+				setWeb3TxHash(hash);
+			}
+
 			const data = await invokeWithSignature(
 				"upsert-creator",
 				{
@@ -875,7 +863,7 @@ export default function Onboarding() {
 						<div className="mx-auto mt-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-2 text-sm text-green-600">
 							✅ Blockchain registration successful!
 							<a
-								href={`https://testnet.bscscan.com/tx/${web3TxHash}`}
+								href={getExplorerTxUrl(web3TxHash)}
 								target="_blank"
 								rel="noopener noreferrer"
 								className="ml-2 underline"
@@ -888,10 +876,6 @@ export default function Onboarding() {
 					{web3Error && (
 						<div className="mx-auto mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-600">
 							Web3 registration failed: {web3Error.message}
-							<br />
-							<span className="text-xs">
-								Falling back to database registration...
-							</span>
 						</div>
 					)}
 

@@ -1,93 +1,112 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import solc from "https://esm.sh/solc@0.8.28";
+import { requireAdmin } from "../_shared/admin-auth.ts";
+import { getServiceRoleKey } from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+	parseJsonBody,
+} from "../_shared/http.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+type CompileRequest = {
+	contractName?: string;
+	source?: string;
 };
 
-async function requireAdmin(req: Request): Promise<string> {
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const auth = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "")?.trim();
-  const apikey = req.headers.get("apikey")?.trim();
+type SolcError = {
+	severity?: string;
+	formattedMessage?: string;
+	message?: string;
+};
 
-  if (serviceRoleKey && (auth === serviceRoleKey || apikey === serviceRoleKey)) {
-    return "system";
-  }
+type SolcArtifact = {
+	abi?: unknown[];
+	evm?: {
+		bytecode?: {
+			object?: string;
+		};
+	};
+};
 
-  if (!auth) throw new Error("Unauthorized");
+type SolcOutput = {
+	contracts?: Record<string, Record<string, SolcArtifact>>;
+	errors?: SolcError[];
+};
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-  );
-
-  const { data: { user }, error } = await supabase.auth.getUser(auth);
-  if (error || !user) throw new Error("Unauthorized");
-
-  const { data: roles } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id)
-    .eq("role", "admin")
-    .single();
-
-  if (!roles) throw new Error("Admin access required");
-  return user.id;
+function parseSolcOutput(raw: string): SolcOutput {
+	try {
+		return JSON.parse(raw) as SolcOutput;
+	} catch {
+		throw new Error("Compiler returned invalid output");
+	}
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+function authStatus(message: string): number {
+	if (message === "Unauthorized" || message === "Forbidden") return 403;
+	return 400;
+}
 
-  try {
-    try {
-      await requireAdmin(req);
-    } catch (e) {
-      return json({ error: e instanceof Error ? e.message : "Unauthorized" }, 403);
-    }
+Deno.serve(async (request: Request) => {
+	const preflight = handlePreflight(request);
+	if (preflight) return preflight;
 
-    const { contractName, source } = await req.json();
-    if (!contractName || !source) {
-      return json({ error: "contractName and source required" }, 400);
-    }
+	try {
+		const body = await parseJsonBody<CompileRequest>(request);
+		const contractName = String(body.contractName ?? "").trim();
+		const source = String(body.source ?? "").trim();
 
-    console.log(`Compiling ${contractName}...`);
+		if (!contractName || !source) {
+			return errorResponse("contractName and source are required", 400);
+		}
 
-    const solc = (await import("https://esm.sh/solc@0.8.28?bundle")).default;
-    const input = {
-      language: "Solidity",
-      sources: { [`${contractName}.sol`]: { content: source } },
-      settings: {
-        optimizer: { enabled: true, runs: 200 },
-        evmVersion: "paris",
-        outputSelection: { "*": { "*": ["abi", "evm.bytecode.object"] } },
-      },
-    };
+		const supabase = createServiceRoleClient();
+		await requireAdmin(request, supabase, getServiceRoleKey());
 
-    const output = JSON.parse(solc.compile(JSON.stringify(input)));
-    if (output.errors?.some((e: any) => e.severity === "error")) {
-      throw new Error(JSON.stringify(output.errors.filter((e: any) => e.severity === "error").map((e: any) => e.formattedMessage)));
-    }
+		const input = {
+			language: "Solidity",
+			sources: {
+				"Contract.sol": { content: source },
+			},
+			settings: {
+				outputSelection: {
+					"*": {
+						"*": ["abi", "evm.bytecode"],
+					},
+				},
+			},
+		};
 
-    const contract = output.contracts[`${contractName}.sol`][contractName];
-    console.log(`Compiled ${contractName} successfully`);
+		const output = parseSolcOutput(solc.compile(JSON.stringify(input)));
+		const compilerErrors = (output.errors ?? []).filter(
+			(entry) => entry.severity === "error",
+		);
+		if (compilerErrors.length > 0) {
+			const details = compilerErrors
+				.map(
+					(entry) =>
+						entry.formattedMessage || entry.message || "Compilation failed",
+				)
+				.join("\n");
+			return errorResponse(details, 400);
+		}
 
-    return json({
-      contractName,
-      abi: contract.abi,
-      bytecode: contract.evm.bytecode.object,
-    });
-  } catch (error: any) {
-    console.error("Compile error:", error);
-    return json({ error: "Compilation failed" }, 500);
-  }
+		const artifact = output.contracts?.["Contract.sol"]?.[contractName];
+		const abi = artifact?.abi;
+		const bytecode = artifact?.evm?.bytecode?.object;
+
+		if (!artifact || !Array.isArray(abi) || typeof bytecode !== "string") {
+			return errorResponse("Compiled artifact not found", 400);
+		}
+
+		return jsonResponse({
+			contractName,
+			abi,
+			bytecode: bytecode.startsWith("0x") ? bytecode : `0x${bytecode}`,
+		});
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		console.error("[compile-contract]", message);
+		return errorResponse(message, authStatus(message));
+	}
 });
-
-function json(data: any, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}

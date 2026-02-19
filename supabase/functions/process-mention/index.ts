@@ -21,6 +21,11 @@ import {
 } from "npm:@openai/agents@0.4.11";
 import type { ModelProvider } from "npm:@openai/agents-core@0.4.11";
 import { buildContextPack } from "../_shared/context-pack.ts";
+import {
+	getOptionalEnv,
+	getRequiredEnv,
+	getSupabaseUrl,
+} from "../_shared/env.ts";
 
 const corsHeaders = {
 	"Access-Control-Allow-Origin": "*",
@@ -222,18 +227,6 @@ function parseMention(rawText: string): ParsedMention {
 	return { intent: "unknown" };
 }
 
-async function sha256Hex(input: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const data = encoder.encode(input);
-	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	return (
-		"0x" +
-		Array.from(new Uint8Array(hashBuffer))
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join("")
-	);
-}
-
 function toHex(bytes: Uint8Array): string {
 	return Array.from(bytes)
 		.map((b) => b.toString(16).padStart(2, "0"))
@@ -260,14 +253,17 @@ function constantTimeEqualStr(a: string, b: string): boolean {
 }
 
 function isInternalServiceCall(req: Request): boolean {
-	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+	const serviceRoleKey = getOptionalEnv("SUPABASE_SERVICE_ROLE_KEY");
 	if (!serviceRoleKey) return false;
 
 	const authorization = req.headers.get("authorization")?.trim() ?? "";
 	const apikey = req.headers.get("apikey")?.trim() ?? "";
 	const authToken = authorization.replace(/^Bearer\s+/i, "").trim();
 
-	return constantTimeEqualStr(authToken, serviceRoleKey) || constantTimeEqualStr(apikey, serviceRoleKey);
+	return (
+		constantTimeEqualStr(authToken, serviceRoleKey) ||
+		constantTimeEqualStr(apikey, serviceRoleKey)
+	);
 }
 
 async function verifyWebhookSignature(params: {
@@ -430,9 +426,7 @@ async function createPostFromMention(params: {
 				params.creatorWallet,
 		),
 	);
-	const commitTxHash = keccak256(
-		toBytes("mock-mention-commit-" + postId + "-" + Date.now()),
-	);
+	const commitTxHash = await submitOnchainProofTransaction();
 	const analysis = analyzeContent(params.contentText);
 
 	// Only insert columns that exist in the posts table schema
@@ -446,12 +440,37 @@ async function createPostFromMention(params: {
 		content_hash: contentHash,
 		meta_hash: metaHash,
 		commit_tx_hash: commitTxHash,
-		is_fallback: false,
 		created_at: createdAt,
 	});
 
 	if (error) throw error;
 	return { postId, analysis };
+}
+
+async function submitOnchainProofTransaction() {
+	const signerPk =
+		Deno.env.get("BNB_TESTNET_PRIVATE_KEY") ||
+		Deno.env.get("DONATION_SIGNER_PRIVATE_KEY");
+	const rpcUrl =
+		Deno.env.get("BNB_TESTNET_RPC_URL") || Deno.env.get("DONATION_RPC_URL");
+
+	if (!signerPk) {
+		throw new Error(
+			"BNB_TESTNET_PRIVATE_KEY (or DONATION_SIGNER_PRIVATE_KEY) is required",
+		);
+	}
+	if (!rpcUrl) {
+		throw new Error("BNB_TESTNET_RPC_URL (or DONATION_RPC_URL) is required");
+	}
+
+	const provider = new JsonRpcProvider(rpcUrl);
+	const wallet = new Wallet(signerPk, provider);
+	const tx = await wallet.sendTransaction({
+		to: wallet.address,
+		value: parseEther("0"),
+	});
+
+	return tx.hash;
 }
 
 async function executeDonationTransfer(
@@ -466,10 +485,9 @@ async function executeDonationTransfer(
 	}
 
 	if (!signerPk || !rpcUrl) {
-		const mockTx = await sha256Hex(
-			`mock-donation-${recipientWallet}-${amount}-${Date.now()}`,
+		throw new Error(
+			"DONATION_SIGNER_PRIVATE_KEY and DONATION_RPC_URL are required",
 		);
-		return { status: "simulated" as const, txHash: mockTx };
 	}
 
 	const provider = new JsonRpcProvider(rpcUrl);
@@ -479,7 +497,7 @@ async function executeDonationTransfer(
 		value: parseEther(amount.toString()),
 	});
 
-	return { status: "submitted" as const, txHash: tx.hash };
+	return { txHash: tx.hash };
 }
 
 async function buildAskResponse(supabase: any, question: string) {
@@ -530,6 +548,7 @@ async function buildAiReply(params: {
 	ctaText?: string | null;
 }) {
 	const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+	const openRouterApiUrl = getRequiredEnv("OPENROUTER_API_URL");
 	if (!openRouterKey) {
 		throw new Error("OPENROUTER_API_KEY is not configured");
 	}
@@ -555,13 +574,13 @@ async function buildAiReply(params: {
 	const timeoutId = setTimeout(() => controller.abort(), 20000);
 
 	try {
-		const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+		const aiRes = await fetch(openRouterApiUrl, {
 			method: "POST",
 			signal: controller.signal,
 			headers: {
 				Authorization: `Bearer ${openRouterKey}`,
 				"Content-Type": "application/json",
-				"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+				"HTTP-Referer": getSupabaseUrl(),
 				"X-Title": "RailMintAI",
 			},
 			body: JSON.stringify({
@@ -603,6 +622,7 @@ async function buildPersonalizedReply(params: {
 	contextPack?: any;
 }) {
 	const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+	const openRouterApiUrl = getRequiredEnv("OPENROUTER_API_URL");
 	if (!openRouterKey) {
 		throw new Error("OPENROUTER_API_KEY is not configured");
 	}
@@ -646,13 +666,13 @@ async function buildPersonalizedReply(params: {
 	const timeoutId = setTimeout(() => controller.abort(), 20000);
 
 	try {
-		const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+		const aiRes = await fetch(openRouterApiUrl, {
 			method: "POST",
 			signal: controller.signal,
 			headers: {
 				Authorization: `Bearer ${openRouterKey}`,
 				"Content-Type": "application/json",
-				"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+				"HTTP-Referer": getSupabaseUrl(),
 				"X-Title": "RailMintAI",
 			},
 			body: JSON.stringify({
@@ -688,6 +708,7 @@ async function replyViaUploadPost(params: { text: string; replyToId: string }) {
 
 	if (!apiKey) throw new Error("Missing UPLOAD_POST_API_KEY");
 	if (!user) throw new Error("Missing UPLOAD_POST_USER");
+	const uploadPostBaseUrl = getRequiredEnv("UPLOAD_POST_BASE_URL");
 
 	const body = new URLSearchParams();
 	body.set("user", user);
@@ -702,7 +723,8 @@ async function replyViaUploadPost(params: { text: string; replyToId: string }) {
 		text_length: params.text.length,
 	});
 
-	const response = await fetch("https://api.upload-post.com/api/upload_text", {
+	const uploadTextUrl = new URL("upload_text", `${uploadPostBaseUrl}/`);
+	const response = await fetch(uploadTextUrl, {
 		method: "POST",
 		headers: {
 			Authorization: `Apikey ${apiKey}`,
@@ -748,6 +770,7 @@ const SCOPE_RE =
  */
 function getOpenRouterProvider(): ModelProvider {
 	const apiKey = Deno.env.get("OPENROUTER_API_KEY");
+	const openRouterApiUrl = getRequiredEnv("OPENROUTER_API_URL");
 	if (!apiKey) throw new Error("OPENROUTER_API_KEY is not configured");
 
 	const client = {
@@ -756,19 +779,16 @@ function getOpenRouterProvider(): ModelProvider {
 				create: async (
 					request: OpenRouterChatRequest,
 				): Promise<OpenRouterChatResponse> => {
-					const response = await fetch(
-						"https://openrouter.ai/api/v1/chat/completions",
-						{
-							method: "POST",
-							headers: {
-								Authorization: `Bearer ${apiKey}`,
-								"Content-Type": "application/json",
-								"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
-								"X-Title": "RailMintAI",
-							},
-							body: JSON.stringify(request),
+					const response = await fetch(openRouterApiUrl, {
+						method: "POST",
+						headers: {
+							Authorization: `Bearer ${apiKey}`,
+							"Content-Type": "application/json",
+							"HTTP-Referer": getSupabaseUrl(),
+							"X-Title": "RailMintAI",
 						},
-					);
+						body: JSON.stringify(request),
+					});
 
 					if (!response.ok) {
 						const errText = await response.text();
@@ -847,19 +867,20 @@ const generatePostTool = tool({
 
 		// Use OpenRouter to generate the draft
 		const openRouterKey = Deno.env.get("OPENROUTER_API_KEY");
+		const openRouterApiUrl = getRequiredEnv("OPENROUTER_API_URL");
 		if (!openRouterKey) return "Error: AI service not configured.";
 
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 20000);
 
 		try {
-			const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+			const res = await fetch(openRouterApiUrl, {
 				method: "POST",
 				signal: controller.signal,
 				headers: {
 					Authorization: `Bearer ${openRouterKey}`,
 					"Content-Type": "application/json",
-					"HTTP-Referer": Deno.env.get("SUPABASE_URL") || "",
+					"HTTP-Referer": getSupabaseUrl(),
 					"X-Title": "RailMintAI",
 				},
 				body: JSON.stringify({
@@ -935,8 +956,7 @@ const publishPostTool = tool({
 			sourceReference: ctx.mentionId,
 		});
 
-		const postUrlBase =
-			Deno.env.get("POST_URL_BASE") || "https://railmint.com/post";
+		const postUrlBase = getRequiredEnv("POST_URL_BASE");
 		const postUrl = `${postUrlBase}/${postId}`;
 
 		return JSON.stringify({
@@ -1191,8 +1211,7 @@ async function runAgentForMention(params: {
 			sourceReference: params.mentionId,
 		});
 
-		const postUrlBase =
-			Deno.env.get("POST_URL_BASE") || "https://railmint.com/post";
+		const postUrlBase = getRequiredEnv("POST_URL_BASE");
 		const postUrl = `${postUrlBase}/${postId}`;
 
 		actionPayload.post_id = postId;
@@ -1339,8 +1358,8 @@ Deno.serve(async (req: Request) => {
 		if (!rawText && !processPending) throw new Error("text is required");
 
 		const supabase = createClient(
-			Deno.env.get("SUPABASE_URL")!,
-			Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+			getSupabaseUrl(),
+			getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
 		);
 
 		if (!isInternalServiceCall(req)) {
@@ -1613,7 +1632,7 @@ Deno.serve(async (req: Request) => {
 				},
 			});
 
-			let transfer: { status: "simulated" | "submitted"; txHash: string };
+			let transfer: { txHash: string };
 			try {
 				transfer = await executeDonationTransfer(
 					recipientCreator.wallet_address,
@@ -1646,7 +1665,7 @@ Deno.serve(async (req: Request) => {
 			const { error: donationUpdateErr } = await supabase
 				.from("donations")
 				.update({
-					status: transfer.status,
+					status: "submitted",
 					tx_hash: transfer.txHash,
 					failure_reason: null,
 				})
@@ -1656,7 +1675,7 @@ Deno.serve(async (req: Request) => {
 
 			await supabase.from("donation_audit_log").insert({
 				donation_id: donationData.id,
-				event_type: transfer.status === "simulated" ? "simulated" : "submitted",
+				event_type: "submitted",
 				tx_hash: transfer.txHash,
 				metadata: {
 					recipient_wallet: recipientCreator.wallet_address,
@@ -1678,7 +1697,7 @@ Deno.serve(async (req: Request) => {
 			actionPayload.recipient_creator_id = recipientCreator.id;
 			actionPayload.recipient_wallet = recipientCreator.wallet_address;
 			actionPayload.amount = parsed.donationAmount;
-			actionPayload.status = transfer.status;
+			actionPayload.status = "submitted";
 		} else {
 			const conversationId = replyToId || mentionId;
 			const agentResult = await runAgentForMention({
@@ -1808,8 +1827,8 @@ Deno.serve(async (req: Request) => {
 		try {
 			if (mentionIdForFailure) {
 				const supabase = createClient(
-					Deno.env.get("SUPABASE_URL")!,
-					Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+					getSupabaseUrl(),
+					getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY"),
 				);
 				await supabase
 					.from("mentions")

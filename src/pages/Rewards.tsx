@@ -40,7 +40,7 @@ import {
 } from "@/hooks/useRewardDistributor";
 import { supabase } from "@/integrations/supabase/client";
 import { formatFixed, toFiniteNumber } from "@/lib/format-number";
-import { getExplorerUrl } from "@/lib/mock-contract";
+import { getBscTestnetTxUrl } from "@/lib/proof-hashes";
 
 interface RewardEpoch {
 	id: number;
@@ -443,7 +443,7 @@ export default function Rewards() {
 										</p>
 										{epoch.payout_tx_hash && (
 											<a
-												href={getExplorerUrl(epoch.payout_tx_hash)}
+												href={getBscTestnetTxUrl(epoch.payout_tx_hash)}
 												target="_blank"
 												rel="noreferrer"
 												className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline"
@@ -509,7 +509,11 @@ export default function Rewards() {
 													selectedEpochId &&
 													claimReward(BigInt(selectedEpochId))
 												}
-												disabled={isClaimPending || !selectedEpochId || !contractStatus.isDeployed}
+												disabled={
+													isClaimPending ||
+													!selectedEpochId ||
+													!contractStatus.isDeployed
+												}
 												size="sm"
 												className="w-full"
 											>
@@ -521,13 +525,14 @@ export default function Rewards() {
 												) : (
 													<>
 														<Trophy className="mr-2 h-4 w-4" />
-														{contractStatus.isDeployed ? "Claim Reward" : "Claim (Mock)"}
+														Claim Reward
 													</>
 												)}
 											</Button>
 											{!contractStatus.isDeployed && (
 												<p className="mt-2 text-xs text-muted-foreground">
-													On-chain claims available when contracts are deployed to BSC testnet.
+													On-chain claims available when contracts are deployed
+													to BSC testnet.
 												</p>
 											)}
 										</div>

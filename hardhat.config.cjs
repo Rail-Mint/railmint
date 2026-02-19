@@ -2,6 +2,8 @@ require("@nomicfoundation/hardhat-toolbox");
 require("@nomicfoundation/hardhat-verify");
 require("dotenv/config");
 
+const bscTestnetRpcUrl = process.env.BSC_TESTNET_RPC_URL;
+
 /** @type import('hardhat/config').HardhatUserConfig */
 const config = {
 	solidity: {
@@ -17,16 +19,18 @@ const config = {
 		hardhat: {
 			chainId: 31337,
 		},
-		bscTestnet: {
-			url:
-				process.env.BSC_TESTNET_RPC_URL ||
-				"https://data-seed-prebsc-1-s1.binance.org:8545",
-			chainId: 97,
-			accounts: process.env.TESTNET_PRIVATE_KEY
-				? [process.env.TESTNET_PRIVATE_KEY]
-				: [],
-			gasPrice: 10000000000,
-		},
+		...(bscTestnetRpcUrl
+			? {
+					bscTestnet: {
+						url: bscTestnetRpcUrl,
+						chainId: 97,
+						accounts: process.env.TESTNET_PRIVATE_KEY
+							? [process.env.TESTNET_PRIVATE_KEY]
+							: [],
+						gasPrice: 10000000000,
+					},
+				}
+			: {}),
 	},
 	etherscan: {
 		apiKey: {

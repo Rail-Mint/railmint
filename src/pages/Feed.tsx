@@ -48,7 +48,6 @@ interface Post {
 	content_text: string;
 	content_html: string | null;
 	commit_tx_hash: string | null;
-	is_fallback: boolean;
 	created_at: string;
 	epoch_id: number;
 	creator: {
@@ -142,6 +141,7 @@ export default function Feed() {
 				.in("post_id", postIds);
 			likes = likesRes.data || [];
 		}
+		const normalizedAddress = address?.toLowerCase();
 
 		const enriched: Post[] = (
 			(postsData as unknown as Array<{
@@ -151,7 +151,6 @@ export default function Feed() {
 				prompt_hash: string;
 				content_hash: string;
 				commit_tx_hash: string | null;
-				is_fallback: boolean;
 				created_at: string;
 				epoch_id: number;
 				creator: Post["creator"];
@@ -163,15 +162,15 @@ export default function Feed() {
 			prompt_hash: post.prompt_hash,
 			content_hash: post.content_hash,
 			commit_tx_hash: post.commit_tx_hash,
-			is_fallback: post.is_fallback || false,
 			created_at: post.created_at,
 			epoch_id: post.epoch_id,
 			creator: post.creator as Post["creator"],
 			like_count: likes.filter((like) => like.post_id === post.id).length,
-			liked_by_me: address
+			liked_by_me: normalizedAddress
 				? likes.some(
 						(like) =>
-							like.post_id === post.id && like.wallet_address === address,
+							like.post_id === post.id &&
+							like.wallet_address === normalizedAddress,
 					)
 				: false,
 		}));
@@ -460,14 +459,6 @@ export default function Feed() {
 																className="border border-sky-500/30 bg-sky-500/10 text-[11px] text-sky-700 dark:text-sky-200"
 															>
 																X Verified
-															</Badge>
-														) : null}
-														{post.is_fallback ? (
-															<Badge
-																variant="secondary"
-																className="text-[11px]"
-															>
-																Fallback
 															</Badge>
 														) : null}
 													</div>

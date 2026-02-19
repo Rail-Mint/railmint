@@ -1,10 +1,15 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-	"Access-Control-Allow-Origin": "*",
-	"Access-Control-Allow-Headers":
-		"authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import {
+	getOptionalEnv,
+	getOptionalIntEnv,
+	getRequiredEnv,
+	getSupabaseUrl,
+} from "../_shared/env.ts";
+import {
+	errorResponse,
+	handlePreflight,
+	jsonResponse,
+} from "../_shared/http.ts";
+import { createServiceRoleClient } from "../_shared/supabase.ts";
 
 type ProcessMentionResult = {
 	success?: boolean;
@@ -14,6 +19,28 @@ type ProcessMentionResult = {
 	result?: Record<string, unknown>;
 	payload?: Record<string, unknown>;
 	error?: string;
+};
+
+type SyncSupabaseClient = {
+	from: (table: string) => {
+		select: (columns: string) => {
+			eq: (
+				column: string,
+				value: string,
+			) => {
+				maybeSingle: () => Promise<{ data: unknown; error: unknown }>;
+			};
+		};
+		update: (values: Record<string, unknown>) => {
+			eq: (column: string, value: string) => Promise<{ error?: unknown }>;
+		};
+	};
+};
+
+type MentionRow = {
+	id: string;
+	payload: Record<string, unknown> | null;
+	parsed_intent: string | null;
 };
 
 function extractHandle(tweet: Record<string, unknown>): string | null {
@@ -154,6 +181,7 @@ async function invokeProcessMention(params: {
 async function postReplyToX(params: {
 	uploadPostApiKey: string;
 	uploadPostUser: string;
+	uploadPostBaseUrl: string;
 	replyToId: string;
 	text: string;
 }) {
@@ -164,7 +192,9 @@ async function postReplyToX(params: {
 	body.set("reply_to_id", params.replyToId);
 	body.set("async_upload", "false");
 
-	const response = await fetch("https://api.upload-post.com/api/upload_text", {
+	const uploadTextUrl = new URL("upload_text", `${params.uploadPostBaseUrl}/`);
+
+	const response = await fetch(uploadTextUrl, {
 		method: "POST",
 		headers: {
 			Authorization: `Apikey ${params.uploadPostApiKey}`,
@@ -237,14 +267,14 @@ async function triggerDrainWorker(params: {
 }
 
 Deno.serve(async (req: Request) => {
-	if (req.method === "OPTIONS")
-		return new Response(null, { headers: corsHeaders });
+	const preflight = handlePreflight(req);
+	if (preflight) return preflight;
 
 	// Authenticate: require service_role key or a dedicated SYNC_API_KEY
 	const authorization = req.headers.get("authorization")?.trim();
 	const apikey = req.headers.get("apikey")?.trim();
-	const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-	const syncApiKey = Deno.env.get("SYNC_API_KEY");
+	const serviceRoleKey = getOptionalEnv("SUPABASE_SERVICE_ROLE_KEY");
+	const syncApiKey = getOptionalEnv("SYNC_API_KEY");
 	const authToken = authorization?.replace(/^Bearer\s+/i, "")?.trim();
 
 	const isServiceRole =
@@ -254,56 +284,49 @@ Deno.serve(async (req: Request) => {
 		syncApiKey && (authToken === syncApiKey || apikey === syncApiKey);
 
 	if (!isServiceRole && !isSyncKey) {
-		return new Response(
-			JSON.stringify({ error: "Unauthorized. Provide a valid API key." }),
-			{
-				status: 401,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
-		);
+		return errorResponse("Unauthorized. Provide a valid API key.", 401);
 	}
 
 	try {
 		const body = await req.json().catch(() => ({}));
 
-		const tweetioApiKey = Deno.env.get("TWEETIO_API_KEY");
-		const tweetioBaseUrl =
-			Deno.env.get("TWEETIO_BASE_URL") || "https://api.twitterapi.io";
-		const xAgentUserName = Deno.env.get("X_AGENT_USERNAME");
-		const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-		const supabaseUrl = Deno.env.get("SUPABASE_URL");
+		const tweetioApiKey = getRequiredEnv("TWEETIO_API_KEY");
+		const tweetioBaseUrl = getRequiredEnv("TWEETIO_BASE_URL");
+		const xAgentUserName = getRequiredEnv("X_AGENT_USERNAME");
+		const serviceRoleKey = getRequiredEnv("SUPABASE_SERVICE_ROLE_KEY");
+		const supabaseUrl = getSupabaseUrl();
 		const processMentionUrl =
-			Deno.env.get("PROCESS_MENTION_FUNCTION_URL") ||
+			getOptionalEnv("PROCESS_MENTION_FUNCTION_URL") ||
 			(supabaseUrl ? `${supabaseUrl}/functions/v1/process-mention` : null);
 		const drainMentionQueueUrl =
-			Deno.env.get("DRAIN_MENTION_QUEUE_FUNCTION_URL") ||
+			getOptionalEnv("DRAIN_MENTION_QUEUE_FUNCTION_URL") ||
 			(supabaseUrl ? `${supabaseUrl}/functions/v1/drain-mention-queue` : null);
-
-		if (!tweetioApiKey) throw new Error("Missing TWEETIO_API_KEY");
-		if (!xAgentUserName) throw new Error("Missing X_AGENT_USERNAME");
-		if (!serviceRoleKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
 		if (!processMentionUrl)
 			throw new Error("Missing process-mention URL configuration");
-		if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
 
-		const uploadPostApiKey = Deno.env.get("UPLOAD_POST_API_KEY");
-		const uploadPostUser = Deno.env.get("UPLOAD_POST_USER");
+		const uploadPostApiKey = getOptionalEnv("UPLOAD_POST_API_KEY");
+		const uploadPostUser = getOptionalEnv("UPLOAD_POST_USER");
+		const uploadPostBaseUrl = getOptionalEnv("UPLOAD_POST_BASE_URL");
 		const queueOnly =
 			typeof body?.queueOnly === "boolean" ? body.queueOnly : false;
 		const ingestConcurrency = Number(
 			body?.ingestConcurrency ||
-				Deno.env.get("MENTION_INGEST_CONCURRENCY") ||
+				getOptionalIntEnv("MENTION_INGEST_CONCURRENCY", 10) ||
 				10,
 		);
 		const triggerDrain = body?.triggerDrain === true;
 		const drainConcurrency = Number(
-			body?.drainConcurrency || Deno.env.get("MENTION_DRAIN_CONCURRENCY") || 10,
+			body?.drainConcurrency ||
+				getOptionalIntEnv("MENTION_DRAIN_CONCURRENCY", 10) ||
+				10,
 		);
 		const drainMaxItems = Number(
-			body?.drainMaxItems || Deno.env.get("MENTION_DRAIN_MAX_ITEMS") || 100,
+			body?.drainMaxItems ||
+				getOptionalIntEnv("MENTION_DRAIN_MAX_ITEMS", 100) ||
+				100,
 		);
 
-		const supabase = createClient(supabaseUrl, serviceRoleKey);
+		const supabase = createServiceRoleClient() as SyncSupabaseClient;
 
 		const sinceTime =
 			typeof body?.sinceTime === "number" ? body.sinceTime : undefined;
@@ -395,8 +418,8 @@ Deno.serve(async (req: Request) => {
 					};
 				}
 
-				const mentionData = mentionRow as any;
-				const payload = (mentionData.payload || {}) as Record<string, unknown>;
+				const mentionData = mentionRow as MentionRow;
+				const payload = mentionData.payload || {};
 				const alreadyReplied = typeof payload.x_reply_sent_at === "string";
 				const shouldReply = mentionData.parsed_intent === "ask";
 				const replyText =
@@ -411,7 +434,8 @@ Deno.serve(async (req: Request) => {
 					alreadyReplied ||
 					!replyText ||
 					!uploadPostApiKey ||
-					!uploadPostUser
+					!uploadPostUser ||
+					!uploadPostBaseUrl
 				) {
 					return {
 						processed: 1,
@@ -425,6 +449,7 @@ Deno.serve(async (req: Request) => {
 					const replyResult = await postReplyToX({
 						uploadPostApiKey,
 						uploadPostUser,
+						uploadPostBaseUrl,
 						replyToId: mentionId,
 						text: replyText,
 					});
@@ -487,32 +512,22 @@ Deno.serve(async (req: Request) => {
 			}
 		}
 
-		return new Response(
-			JSON.stringify({
-				success: true,
-				scanned: mentions.length,
-				queue_only: queueOnly,
-				ingest_concurrency: ingestConcurrency,
-				processed,
-				duplicates,
-				failed,
-				replied,
-				drain_result: drainResult,
-				errors,
-			}),
-			{
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
-		);
+		return jsonResponse({
+			success: true,
+			scanned: mentions.length,
+			queue_only: queueOnly,
+			ingest_concurrency: ingestConcurrency,
+			processed,
+			duplicates,
+			failed,
+			replied,
+			drain_result: drainResult,
+			errors,
+		});
 	} catch (error) {
-		return new Response(
-			JSON.stringify({
-				error: error instanceof Error ? error.message : "Unknown error",
-			}),
-			{
-				status: 400,
-				headers: { ...corsHeaders, "Content-Type": "application/json" },
-			},
+		return errorResponse(
+			error instanceof Error ? error.message : "Unknown error",
+			400,
 		);
 	}
 });
