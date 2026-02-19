@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
 				"import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(
 					env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
 				),
+				"import.meta.env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL": JSON.stringify(
+					env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL || "https://testnet.bscscan.com",
+				),
 			};
 
 	return {
