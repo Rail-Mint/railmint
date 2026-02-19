@@ -51,6 +51,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "creator_conversation_summaries_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "creator_conversation_summaries_mention_id_fkey"
             columns: ["mention_id"]
             isOneToOne: false
@@ -98,6 +105,13 @@ export type Database = {
             referencedRelation: "creators"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "creator_embeddings_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       creator_news_digests: {
@@ -139,6 +153,13 @@ export type Database = {
             referencedRelation: "creators"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "creator_news_digests_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       creator_post_index: {
@@ -175,6 +196,13 @@ export type Database = {
             columns: ["creator_id"]
             isOneToOne: false
             referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creator_post_index_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
             referencedColumns: ["id"]
           },
           {
@@ -226,6 +254,13 @@ export type Database = {
             columns: ["creator_id"]
             isOneToOne: true
             referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "creator_profiles_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: true
+            referencedRelation: "creators_public"
             referencedColumns: ["id"]
           },
         ]
@@ -371,6 +406,13 @@ export type Database = {
             referencedRelation: "creators"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "donations_recipient_creator_id_fkey"
+            columns: ["recipient_creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
       epoch_rewards: {
@@ -404,6 +446,13 @@ export type Database = {
             columns: ["creator_id"]
             isOneToOne: false
             referencedRelation: "creators"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "epoch_rewards_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
             referencedColumns: ["id"]
           },
           {
@@ -574,6 +623,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "posts_creator_id_fkey"
+            columns: ["creator_id"]
+            isOneToOne: false
+            referencedRelation: "creators_public"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "posts_epoch_id_fkey"
             columns: ["epoch_id"]
             isOneToOne: false
@@ -641,7 +697,42 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      creators_public: {
+        Row: {
+          clone_name: string | null
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          persona_text: string | null
+          updated_at: string | null
+          x_handle: string | null
+          x_verified: boolean | null
+          x_verified_at: string | null
+        }
+        Insert: {
+          clone_name?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          persona_text?: string | null
+          updated_at?: string | null
+          x_handle?: string | null
+          x_verified?: boolean | null
+          x_verified_at?: string | null
+        }
+        Update: {
+          clone_name?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          persona_text?: string | null
+          updated_at?: string | null
+          x_handle?: string | null
+          x_verified?: boolean | null
+          x_verified_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       has_role: {

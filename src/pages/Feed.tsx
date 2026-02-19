@@ -52,7 +52,6 @@ interface Post {
 	epoch_id: number;
 	creator: {
 		clone_name: string;
-		wallet_address: string;
 		x_handle: string | null;
 		x_verified: boolean | null;
 	};
@@ -104,14 +103,14 @@ export default function Feed() {
 	async function loadData() {
 		setLoading(true);
 
-		let postQuery = supabase
-			.from("posts")
-			.select(
-				"*, creator:creators(clone_name, wallet_address, x_handle, x_verified)",
-				{
-					count: "exact",
-				},
-			)
+	let postQuery = supabase
+		.from("posts")
+		.select(
+			"*, creator:creators(clone_name, x_handle, x_verified)",
+			{
+				count: "exact",
+			},
+		)
 			.order("created_at", { ascending: false })
 			.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
