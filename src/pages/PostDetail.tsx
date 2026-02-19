@@ -637,11 +637,13 @@ export default function PostDetail() {
 						<CardHeader>
 							<div className="flex items-start justify-between gap-4">
 								<div>
-									<CardTitle className="text-xl tracking-tight">
+								<CardTitle className="text-xl tracking-tight">
 										{creator?.clone_name || "Unknown creator"}
 									</CardTitle>
 									<p className="text-sm text-muted-foreground">
-										{creator?.x_handle || shortAddress(creator?.wallet_address)}
+										{creator?.x_handle
+											? `@${creator.x_handle.replace(/^@/, "")}`
+											: creator?.clone_name || "Anonymous creator"}
 									</p>
 								</div>
 								{post.commit_tx_hash ? (
