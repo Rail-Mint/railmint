@@ -1,0 +1,33 @@
+{
+  "projectName": "RailMint",
+  "network": "BSC Testnet",
+  "contracts": [
+    {
+      "name": "CreatorRegistry",
+      "address": "0x5d506f9a720a4639881b269f4899868bed800504",
+      "explorerLink": "https://testnet.bscscan.com/address/0x5d506f9a720a4639881b269f4899868bed800504",
+      "description": "Creator identity and profile registry"
+    },
+    {
+      "name": "ContentManager",
+      "address": "0x9c458963d17142d0c28341b30b1055a1e73f562f",
+      "explorerLink": "https://testnet.bscscan.com/address/0x9c458963d17142d0c28341b30b1055a1e73f562f",
+      "description": "Onchain publish, engagement, and content proofs"
+    },
+    {
+      "name": "RewardDistributor",
+      "address": "0xef7f43074521b0e941c1be89df390a93cafb588f",
+      "explorerLink": "https://testnet.bscscan.com/address/0xef7f43074521b0e941c1be89df390a93cafb588f",
+      "description": "Epoch reward distribution and claiming"
+    },
+    {
+      "name": "VotingSystem",
+      "address": "0x0000000000000000000000000000000000000000",
+      "explorerLink": "",
+      "description": "Optional governance/voting contract (if deployed)"
+    }
+  ],
+  "frontendUrl": "http://localhost:8080",
+  "backendApi": "http://127.0.0.1:54321",
+  "notes": "Values populated from current .env.local. Update frontend/backend URLs to production endpoints before submission."
+}
