@@ -5,22 +5,23 @@ import { defineConfig, loadEnv } from "vite";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-	const isLovable = mode !== "sandbox";
 	const env = loadEnv(mode, process.cwd(), "");
+	const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || "";
+	const supabasePublishableKey =
+		env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+		env.SUPABASE_PUBLISHABLE_KEY ||
+		env.SUPABASE_ANON_KEY ||
+		"";
 
-	const define = !isLovable
-		? {}
-		: {
-				"import.meta.env.VITE_SUPABASE_URL": JSON.stringify(
-					env.VITE_SUPABASE_URL || "",
-				),
-				"import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(
-					env.VITE_SUPABASE_PUBLISHABLE_KEY || "",
-				),
-				"import.meta.env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL": JSON.stringify(
-					env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL || "https://testnet.bscscan.com",
-				),
-			};
+	const define = {
+		"import.meta.env.VITE_SUPABASE_URL": JSON.stringify(supabaseUrl),
+		"import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY": JSON.stringify(
+			supabasePublishableKey,
+		),
+		"import.meta.env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL": JSON.stringify(
+			env.VITE_BLOCKCHAIN_EXPLORER_BASE_URL || "https://testnet.bscscan.com",
+		),
+	};
 
 	return {
 		define,
