@@ -109,7 +109,7 @@ flowchart LR
     E --> CE[close-epoch fn]
     CE --> RD[RewardDistributor contract]
     RD --> P[Pending creator rewards]
-    P --> UI[/rewards page]
+    P --> UI[Rewards page]
     UI --> Claim[Creator claims reward onchain]
 ```
 
