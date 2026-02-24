@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface ICreatorRegistry {
     struct Creator {
@@ -21,7 +22,29 @@ interface ICreatorRegistry {
  * @title RewardDistributor
  * @dev Distributes BNB rewards to creators based on performance epochs
  */
-contract RewardDistributor is Ownable, ReentrancyGuard {
+contract RewardDistributor is Ownable, ReentrancyGuard, Pausable {
+    // Custom errors
+    error InvalidRegistryAddress();
+    error InvalidTimeRange();
+    error StartTimeMustBeFuture();
+    error ArrayLengthMismatch();
+    error EmptyArrays();
+    error RewardsAlreadyDistributed();
+    error EpochNotEndedYet();
+    error AmountMustBeGreaterThanZero();
+    error CreatorNotFound();
+    error CreatorNotActive();
+    error InsufficientContractBalance();
+    error InvalidEpochId();
+    error NoRewardForCreator();
+    error RewardAlreadyClaimed();
+    error NoRewardToClaim();
+    error TransferFailed();
+    error InsufficientBalance();
+    error MaxEpochDurationExceeded();
+    error RewardCapExceeded();
+    error ZeroAddress();
+
     struct Epoch {
         uint256 id;
         uint256 startTime;
@@ -43,11 +66,21 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
     uint256 private _epochIdCounter;
     ICreatorRegistry public creatorRegistry;
     
+    // Max epoch duration (90 days)
+    uint256 public constant MAX_EPOCH_DURATION = 90 days;
+    // Max reward per creator in an epoch (100 BNB)
+    uint256 public constant MAX_REWARD_PER_CREATOR = 100e18;
+    // Max total rewards per epoch (10000 BNB)
+    uint256 public constant MAX_TOTAL_REWARDS = 10000e18;
+    
     // Mappings
     mapping(uint256 => Epoch) public epochs;
     mapping(uint256 => mapping(uint256 => CreatorReward)) public rewards; // epochId => creatorId => reward
     mapping(uint256 => uint256[]) public epochCreators; // epochId => creatorIds[]
     mapping(address => uint256) public pendingWithdrawals;
+    
+    // Reverse mapping for O(1) claim lookup: epochId => creatorWallet => creatorId
+    mapping(uint256 => mapping(address => uint256)) public epochCreatorByWallet;
     
     // Events
     event EpochCreated(
@@ -78,8 +111,11 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
         uint256 timestamp
     );
 
+    event EmergencyPause(address indexed pauser, uint256 timestamp);
+    event EmergencyUnpause(address indexed unpauser, uint256 timestamp);
+    
     constructor(address _creatorRegistry) Ownable(msg.sender) {
-        require(_creatorRegistry != address(0), "Invalid registry address");
+        if (_creatorRegistry == address(0)) revert ZeroAddress();
         creatorRegistry = ICreatorRegistry(_creatorRegistry);
         _epochIdCounter = 1; // Start IDs from 1
     }
@@ -87,7 +123,7 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
     /**
      * @dev Receive BNB for reward pool
      */
-    receive() external payable {
+    receive() external payable whenNotPaused {
         emit FundsDeposited(msg.sender, msg.value, block.timestamp);
     }
 
@@ -100,9 +136,10 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
     function createEpoch(
         uint256 _startTime,
         uint256 _endTime
-    ) external onlyOwner returns (uint256) {
-        require(_startTime < _endTime, "Invalid time range");
-        require(_startTime >= block.timestamp, "Start time must be in future");
+    ) external onlyOwner whenNotPaused returns (uint256) {
+        if (_startTime >= _endTime) revert InvalidTimeRange();
+        if (_startTime < block.timestamp) revert StartTimeMustBeFuture();
+        if (_endTime - _startTime > MAX_EPOCH_DURATION) revert MaxEpochDurationExceeded();
 
         uint256 epochId = _epochIdCounter++;
         
@@ -130,12 +167,12 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
         uint256 _epochId,
         uint256[] memory _creatorIds,
         uint256[] memory _amounts
-    ) external onlyOwner nonReentrant {
-        require(_epochId > 0 && _epochId < _epochIdCounter, "Invalid epoch ID");
-        require(_creatorIds.length == _amounts.length, "Array length mismatch");
-        require(_creatorIds.length > 0, "Empty arrays");
-        require(!epochs[_epochId].distributed, "Rewards already distributed");
-        require(block.timestamp >= epochs[_epochId].endTime, "Epoch not ended yet");
+    ) external onlyOwner nonReentrant whenNotPaused {
+        if (_epochId == 0 || _epochId >= _epochIdCounter) revert InvalidEpochId();
+        if (_creatorIds.length != _amounts.length) revert ArrayLengthMismatch();
+        if (_creatorIds.length == 0) revert EmptyArrays();
+        if (epochs[_epochId].distributed) revert RewardsAlreadyDistributed();
+        if (block.timestamp < epochs[_epochId].endTime) revert EpochNotEndedYet();
 
         uint256 totalAmount = 0;
         
@@ -143,12 +180,13 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
             uint256 creatorId = _creatorIds[i];
             uint256 amount = _amounts[i];
             
-            require(amount > 0, "Amount must be greater than 0");
+            if (amount == 0) revert AmountMustBeGreaterThanZero();
+            if (amount > MAX_REWARD_PER_CREATOR) revert RewardCapExceeded();
             
             // Verify creator exists and is active
             ICreatorRegistry.Creator memory creator = creatorRegistry.getCreator(creatorId);
-            require(creator.id != 0, "Creator not found");
-            require(creator.isActive, "Creator is not active");
+            if (creator.id == 0) revert CreatorNotFound();
+            if (!creator.isActive) revert CreatorNotActive();
             
             // Store reward
             rewards[_epochId][creatorId] = CreatorReward({
@@ -162,11 +200,15 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
             // Add to pending withdrawals
             pendingWithdrawals[creator.wallet] += amount;
             
+            // Store reverse mapping for O(1) lookup
+            epochCreatorByWallet[_epochId][creator.wallet] = creatorId;
+            
             totalAmount += amount;
             epochCreators[_epochId].push(creatorId);
         }
         
-        require(address(this).balance >= totalAmount, "Insufficient contract balance");
+        if (totalAmount > MAX_TOTAL_REWARDS) revert RewardCapExceeded();
+        if (address(this).balance < totalAmount) revert InsufficientContractBalance();
         
         epochs[_epochId].totalRewards = totalAmount;
         epochs[_epochId].distributed = true;
@@ -179,37 +221,27 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
      * @dev Claim rewards for a specific epoch
      * @param _epochId Epoch ID
      */
-    function claimReward(uint256 _epochId) external nonReentrant {
-        require(_epochId > 0 && _epochId < _epochIdCounter, "Invalid epoch ID");
-        require(epochs[_epochId].distributed, "Rewards not distributed yet");
+    function claimReward(uint256 _epochId) external nonReentrant whenNotPaused {
+        if (_epochId == 0 || _epochId >= _epochIdCounter) revert InvalidEpochId();
+        if (!epochs[_epochId].distributed) revert EpochNotEndedYet();
 
-        // Find creator's reward in this epoch
-        uint256[] memory creatorIds = epochCreators[_epochId];
-        uint256 creatorId = 0;
-        
-        for (uint256 i = 0; i < creatorIds.length; i++) {
-            ICreatorRegistry.Creator memory creator = creatorRegistry.getCreator(creatorIds[i]);
-            if (creator.wallet == msg.sender) {
-                creatorId = creatorIds[i];
-                break;
-            }
-        }
-        
-        require(creatorId != 0, "No reward for this creator in this epoch");
+        // O(1) lookup instead of O(n) loop
+        uint256 creatorId = epochCreatorByWallet[_epochId][msg.sender];
+        if (creatorId == 0) revert NoRewardForCreator();
         
         CreatorReward storage reward = rewards[_epochId][creatorId];
-        require(!reward.claimed, "Reward already claimed");
-        require(reward.amount > 0, "No reward to claim");
+        if (reward.claimed) revert RewardAlreadyClaimed();
+        if (reward.amount == 0) revert NoRewardToClaim();
 
+        // CEI pattern: Update state BEFORE transfer
+        uint256 amount = reward.amount;
         reward.claimed = true;
         reward.claimedAt = block.timestamp;
-        
-        uint256 amount = reward.amount;
         pendingWithdrawals[msg.sender] -= amount;
 
         // Transfer BNB
         (bool success, ) = msg.sender.call{value: amount}("");
-        require(success, "Transfer failed");
+        if (!success) revert TransferFailed();
 
         emit RewardClaimed(_epochId, creatorId, msg.sender, amount, block.timestamp);
     }
@@ -220,7 +252,7 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
      * @return Epoch struct
      */
     function getEpoch(uint256 _epochId) external view returns (Epoch memory) {
-        require(_epochId > 0 && _epochId < _epochIdCounter, "Invalid epoch ID");
+        if (_epochId == 0 || _epochId >= _epochIdCounter) revert InvalidEpochId();
         return epochs[_epochId];
     }
 
@@ -264,10 +296,26 @@ contract RewardDistributor is Ownable, ReentrancyGuard {
      * @dev Withdraw excess funds (only owner)
      * @param _amount Amount to withdraw
      */
-    function withdrawExcess(uint256 _amount) external onlyOwner nonReentrant {
-        require(_amount <= address(this).balance, "Insufficient balance");
+    function withdrawExcess(uint256 _amount) external onlyOwner nonReentrant whenNotPaused {
+        if (_amount > address(this).balance) revert InsufficientBalance();
         
         (bool success, ) = msg.sender.call{value: _amount}("");
-        require(success, "Transfer failed");
+        if (!success) revert TransferFailed();
+    }
+
+    /**
+     * @dev Pause the contract in case of emergency
+     */
+    function pause() external onlyOwner whenNotPaused {
+        _pause();
+        emit EmergencyPause(msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Unpause the contract
+     */
+    function unpause() external onlyOwner whenPaused {
+        _unpause();
+        emit EmergencyUnpause(msg.sender, block.timestamp);
     }
 }

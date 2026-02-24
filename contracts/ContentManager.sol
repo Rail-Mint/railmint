@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 interface ICreatorRegistry {
     struct Creator {
@@ -21,7 +22,22 @@ interface ICreatorRegistry {
  * @title ContentManager
  * @dev Manages content publishing and voting on-chain
  */
-contract ContentManager is Ownable, ReentrancyGuard {
+contract ContentManager is Ownable, ReentrancyGuard, Pausable {
+    // Custom errors
+    error InvalidRegistryAddress();
+    error ContentHashCannotBeEmpty();
+    error IpfsUriCannotBeEmpty();
+    error InvalidCreatorId();
+    error CreatorIsNotActive();
+    error NotCreatorsWallet();
+    error InvalidContentId();
+    error ContentIsNotActive();
+    error AlreadyLikedContent();
+    error HavenotLikedContent();
+    error NotAuthorized();
+    error ContentAlreadyDeactivated();
+    error ZeroAddress();
+
     struct Content {
         uint256 id;
         uint256 creatorId;
@@ -67,8 +83,11 @@ contract ContentManager is Ownable, ReentrancyGuard {
         uint256 timestamp
     );
 
+    event EmergencyPause(address indexed pauser, uint256 timestamp);
+    event EmergencyUnpause(address indexed unpauser, uint256 timestamp);
+
     constructor(address _creatorRegistry) Ownable(msg.sender) {
-        require(_creatorRegistry != address(0), "Invalid registry address");
+        if (_creatorRegistry == address(0)) revert ZeroAddress();
         creatorRegistry = ICreatorRegistry(_creatorRegistry);
         _contentIdCounter = 1; // Start IDs from 1
     }
@@ -84,15 +103,15 @@ contract ContentManager is Ownable, ReentrancyGuard {
         uint256 _creatorId,
         bytes32 _contentHash,
         string memory _ipfsUri
-    ) external nonReentrant returns (uint256) {
-        require(_contentHash != bytes32(0), "Content hash cannot be empty");
-        require(bytes(_ipfsUri).length > 0, "IPFS URI cannot be empty");
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        if (_contentHash == bytes32(0)) revert ContentHashCannotBeEmpty();
+        if (bytes(_ipfsUri).length == 0) revert IpfsUriCannotBeEmpty();
 
         // Verify creator exists and is active
         ICreatorRegistry.Creator memory creator = creatorRegistry.getCreator(_creatorId);
-        require(creator.id != 0, "Invalid creator ID");
-        require(creator.isActive, "Creator is not active");
-        require(creator.wallet == msg.sender, "Not the creator's wallet");
+        if (creator.id == 0) revert InvalidCreatorId();
+        if (!creator.isActive) revert CreatorIsNotActive();
+        if (creator.wallet != msg.sender) revert NotCreatorsWallet();
 
         uint256 contentId = _contentIdCounter++;
         
@@ -115,7 +134,6 @@ contract ContentManager is Ownable, ReentrancyGuard {
             _ipfsUri,
             block.timestamp
         );
-
         return contentId;
     }
 
@@ -123,10 +141,10 @@ contract ContentManager is Ownable, ReentrancyGuard {
      * @dev Like content (one vote per wallet)
      * @param _contentId Content ID to like
      */
-    function likeContent(uint256 _contentId) external nonReentrant {
-        require(_contentId > 0 && _contentId < _contentIdCounter, "Invalid content ID");
-        require(contents[_contentId].isActive, "Content is not active");
-        require(!hasLiked[_contentId][msg.sender], "Already liked this content");
+    function likeContent(uint256 _contentId) external nonReentrant whenNotPaused {
+        if (_contentId == 0 || _contentId >= _contentIdCounter) revert InvalidContentId();
+        if (!contents[_contentId].isActive) revert ContentIsNotActive();
+        if (hasLiked[_contentId][msg.sender]) revert AlreadyLikedContent();
 
         contents[_contentId].likeCount++;
         hasLiked[_contentId][msg.sender] = true;
@@ -138,10 +156,10 @@ contract ContentManager is Ownable, ReentrancyGuard {
      * @dev Unlike content
      * @param _contentId Content ID to unlike
      */
-    function unlikeContent(uint256 _contentId) external nonReentrant {
-        require(_contentId > 0 && _contentId < _contentIdCounter, "Invalid content ID");
-        require(contents[_contentId].isActive, "Content is not active");
-        require(hasLiked[_contentId][msg.sender], "Haven't liked this content");
+    function unlikeContent(uint256 _contentId) external nonReentrant whenNotPaused {
+        if (_contentId == 0 || _contentId >= _contentIdCounter) revert InvalidContentId();
+        if (!contents[_contentId].isActive) revert ContentIsNotActive();
+        if (!hasLiked[_contentId][msg.sender]) revert HavenotLikedContent();
 
         contents[_contentId].likeCount--;
         hasLiked[_contentId][msg.sender] = false;
@@ -153,18 +171,15 @@ contract ContentManager is Ownable, ReentrancyGuard {
      * @dev Deactivate content (only owner or creator)
      * @param _contentId Content ID to deactivate
      */
-    function deactivateContent(uint256 _contentId) external nonReentrant {
-        require(_contentId > 0 && _contentId < _contentIdCounter, "Invalid content ID");
-        require(contents[_contentId].isActive, "Content already deactivated");
+    function deactivateContent(uint256 _contentId) external nonReentrant whenNotPaused {
+        if (_contentId == 0 || _contentId >= _contentIdCounter) revert InvalidContentId();
+        if (!contents[_contentId].isActive) revert ContentAlreadyDeactivated();
 
         Content storage content = contents[_contentId];
         
         // Check if caller is owner or content creator
         ICreatorRegistry.Creator memory creator = creatorRegistry.getCreator(content.creatorId);
-        require(
-            msg.sender == owner() || msg.sender == creator.wallet,
-            "Not authorized"
-        );
+        if (msg.sender != owner() && msg.sender != creator.wallet) revert NotAuthorized();
 
         content.isActive = false;
 
@@ -177,7 +192,7 @@ contract ContentManager is Ownable, ReentrancyGuard {
      * @return Content struct
      */
     function getContent(uint256 _contentId) external view returns (Content memory) {
-        require(_contentId > 0 && _contentId < _contentIdCounter, "Invalid content ID");
+        if (_contentId == 0 || _contentId >= _contentIdCounter) revert InvalidContentId();
         return contents[_contentId];
     }
 
@@ -206,5 +221,21 @@ contract ContentManager is Ownable, ReentrancyGuard {
      */
     function getTotalContents() external view returns (uint256) {
         return _contentIdCounter - 1;
+    }
+
+    /**
+     * @dev Pause the contract in case of emergency
+     */
+    function pause() external onlyOwner whenNotPaused {
+        _pause();
+        emit EmergencyPause(msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Unpause the contract
+     */
+    function unpause() external onlyOwner whenPaused {
+        _unpause();
+        emit EmergencyUnpause(msg.sender, block.timestamp);
     }
 }

@@ -3,12 +3,24 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title CreatorRegistry
  * @dev Manages creator registrations and profiles on-chain
  */
-contract CreatorRegistry is Ownable, ReentrancyGuard {
+contract CreatorRegistry is Ownable, ReentrancyGuard, Pausable {
+    // Custom errors
+    error XHandleCannotBeEmpty();
+    error ProfileHashCannotBeEmpty();
+    error CreatorAlreadyRegistered();
+    error XHandleAlreadyTaken();
+    error CreatorNotRegistered();
+    error CreatorIsDeactivated();
+    error InvalidCreatorId();
+    error CreatorAlreadyDeactivated();
+    error ZeroAddress();
+
     struct Creator {
         uint256 id;
         address wallet;
@@ -46,6 +58,9 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
         uint256 timestamp
     );
 
+    event EmergencyPause(address indexed pauser, uint256 timestamp);
+    event EmergencyUnpause(address indexed unpauser, uint256 timestamp);
+
     constructor() Ownable(msg.sender) {
         _creatorIdCounter = 1; // Start IDs from 1
     }
@@ -59,11 +74,11 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
     function registerCreator(
         string memory _xHandle,
         bytes32 _profileHash
-    ) external nonReentrant returns (uint256) {
-        require(bytes(_xHandle).length > 0, "X handle cannot be empty");
-        require(_profileHash != bytes32(0), "Profile hash cannot be empty");
-        require(walletToCreatorId[msg.sender] == 0, "Creator already registered");
-        require(!xHandleExists[_xHandle], "X handle already taken");
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        if (bytes(_xHandle).length == 0) revert XHandleCannotBeEmpty();
+        if (_profileHash == bytes32(0)) revert ProfileHashCannotBeEmpty();
+        if (walletToCreatorId[msg.sender] != 0) revert CreatorAlreadyRegistered();
+        if (xHandleExists[_xHandle]) revert XHandleAlreadyTaken();
 
         uint256 creatorId = _creatorIdCounter++;
         
@@ -94,11 +109,11 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
      * @dev Update creator profile hash
      * @param _profileHash New profile hash
      */
-    function updateProfile(bytes32 _profileHash) external nonReentrant {
+    function updateProfile(bytes32 _profileHash) external nonReentrant whenNotPaused {
         uint256 creatorId = walletToCreatorId[msg.sender];
-        require(creatorId != 0, "Creator not registered");
-        require(creators[creatorId].isActive, "Creator is deactivated");
-        require(_profileHash != bytes32(0), "Profile hash cannot be empty");
+        if (creatorId == 0) revert CreatorNotRegistered();
+        if (!creators[creatorId].isActive) revert CreatorIsDeactivated();
+        if (_profileHash == bytes32(0)) revert ProfileHashCannotBeEmpty();
 
         creators[creatorId].profileHash = _profileHash;
 
@@ -109,9 +124,9 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
      * @dev Deactivate a creator (only owner)
      * @param _creatorId Creator ID to deactivate
      */
-    function deactivateCreator(uint256 _creatorId) external onlyOwner {
-        require(_creatorId > 0 && _creatorId < _creatorIdCounter, "Invalid creator ID");
-        require(creators[_creatorId].isActive, "Creator already deactivated");
+    function deactivateCreator(uint256 _creatorId) external onlyOwner whenNotPaused {
+        if (_creatorId == 0 || _creatorId >= _creatorIdCounter) revert InvalidCreatorId();
+        if (!creators[_creatorId].isActive) revert CreatorAlreadyDeactivated();
 
         creators[_creatorId].isActive = false;
 
@@ -124,7 +139,7 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
      * @return Creator struct
      */
     function getCreator(uint256 _creatorId) external view returns (Creator memory) {
-        require(_creatorId > 0 && _creatorId < _creatorIdCounter, "Invalid creator ID");
+        if (_creatorId == 0 || _creatorId >= _creatorIdCounter) revert InvalidCreatorId();
         return creators[_creatorId];
     }
 
@@ -152,5 +167,21 @@ contract CreatorRegistry is Ownable, ReentrancyGuard {
      */
     function getTotalCreators() external view returns (uint256) {
         return _creatorIdCounter - 1;
+    }
+
+    /**
+     * @dev Pause the contract in case of emergency
+     */
+    function pause() external onlyOwner whenNotPaused {
+        _pause();
+        emit EmergencyPause(msg.sender, block.timestamp);
+    }
+
+    /**
+     * @dev Unpause the contract
+     */
+    function unpause() external onlyOwner whenPaused {
+        _unpause();
+        emit EmergencyUnpause(msg.sender, block.timestamp);
     }
 }
