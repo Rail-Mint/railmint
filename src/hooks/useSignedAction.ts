@@ -79,7 +79,15 @@ export function useSignedAction() {
 				},
 			});
 
-			if (error) throw error;
+			if (error) {
+				if (error.context && typeof error.context.json === "function") {
+					try {
+						const errBody = await error.context.clone().json();
+						if (errBody?.error) throw new Error(errBody.error);
+					} catch {}
+				}
+				throw error;
+			}
 			if (data?.error) throw new Error(data.error);
 
 			return data;
