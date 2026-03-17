@@ -31,3 +31,9 @@ dist-ssr
 
 # Local mock server (do not commit)
 /mock/
+
+# Opencode and Serena
+opencode.json
+
+# Supabase temp
+supabase/.temp/
