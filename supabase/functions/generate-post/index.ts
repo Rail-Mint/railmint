@@ -9,6 +9,7 @@ import {
 } from "https://esm.sh/viem@2.21.0";
 import { privateKeyToAccount } from "https://esm.sh/viem@2.21.0/accounts";
 import { getRequiredEnv, getSupabaseUrl } from "../_shared/env.ts";
+import { fetchChatCompletionWithFailover } from "../_shared/llm-failover.ts";
 
 function createBscTestnetChain(rpcUrl: string, explorerUrl: string) {
 	return defineChain({
@@ -244,37 +245,24 @@ Deno.serve(async (req: Request) => {
 				: baseSystemPrompt;
 
 		let contentText: string;
-		const modelVersion = "google/gemini-2.5-flash";
+		const modelVersion = body.model || "google/gemini-2.5-flash";
 
-		// Try AI generation via OpenRouter with timeout
-		const OPENROUTER_API_KEY = getRequiredEnv("OPENROUTER_API_KEY");
-		const OPENROUTER_API_URL = getRequiredEnv("OPENROUTER_API_URL");
-
+		// Try AI generation via OpenRouter or Gemini with timeout
 		// Create abort controller for timeout
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
 		try {
-			const aiRes = await fetch(OPENROUTER_API_URL, {
-				method: "POST",
-				signal: controller.signal,
-				headers: {
-					Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-					"Content-Type": "application/json",
-					"HTTP-Referer": getSupabaseUrl(),
-					"X-Title": "RailMintAI",
-				},
-				body: JSON.stringify({
+			const aiRes = await fetchChatCompletionWithFailover(
+				{
 					model: modelVersion,
 					messages: [
-						{
-							role: "system",
-							content: systemPrompt,
-						},
+						{ role: "system", content: systemPrompt },
 						{ role: "user", content: promptText },
 					],
-				}),
-			});
+				},
+				controller.signal
+			);
 
 			if (!aiRes.ok) {
 				console.error("AI error:", aiRes.status, await aiRes.text());
